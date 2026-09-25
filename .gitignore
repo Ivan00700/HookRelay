@@ -1,0 +1,14 @@
+# Compiled binaries
+/bin/
+*.exe
+
+# Local configuration and secrets
+.env
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+
+# Test output
+coverage.out
