@@ -7,7 +7,9 @@
 
 ## Текущий этап
 
-Этап 1: первый HTTP-сервер. Условия находятся в [`TASKS.md`](TASKS.md).
+Этап 2: модели, JSON и валидация. Навигация по заданиям находится в
+[`TASKS.md`](TASKS.md), текущее подробное задание — в
+[`docs/lessons/02-models-validation/TASK.md`](docs/lessons/02-models-validation/TASK.md).
 
 ## Требования
 
