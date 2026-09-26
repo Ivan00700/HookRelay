@@ -13,5 +13,5 @@
 # Test output
 coverage.out
 
-# Local learning experiments
+# Local experiments
 .scratch/
