@@ -89,6 +89,32 @@ func (s *MemoryStore) CreateEvent(event domain.Event) error {
 	return nil
 }
 
+func (s *MemoryStore) DeleteEvent(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.events[id]; !ok {
+		return ErrNotFound
+	}
+	delete(s.events, id)
+	return nil
+}
+
+func (s *MemoryStore) UpdateEventStatus(id string, status domain.DeliveryStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	event, ok := s.events[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if !domain.CanTransition(event.Status, status) {
+		return ErrInvalidTransition
+	}
+	event.Status = status
+	s.events[id] = event
+	return nil
+}
+
 func (s *MemoryStore) GetEvent(id string) (domain.Event, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -173,6 +173,66 @@ func TestMemoryStoreCopiesEventPayload(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreEventStatusTransitions(t *testing.T) {
+	s := NewMemoryStore()
+	if err := s.CreateEndpoint(domain.Endpoint{ID: "ep-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateEvent(domain.Event{ID: "ev-1", EndpointID: "ep-1", Status: domain.DeliveryStatusPending}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.UpdateEventStatus("missing", domain.DeliveryStatusProcessing); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing event: got %v, want ErrNotFound", err)
+	}
+	if err := s.UpdateEventStatus("ev-1", domain.DeliveryStatusDelivered); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("pending to delivered: got %v, want ErrInvalidTransition", err)
+	}
+	if err := s.UpdateEventStatus("ev-1", domain.DeliveryStatusProcessing); err != nil {
+		t.Fatalf("pending to processing: %v", err)
+	}
+	if err := s.UpdateEventStatus("ev-1", domain.DeliveryStatusFailed); err != nil {
+		t.Fatalf("processing to failed: %v", err)
+	}
+	if err := s.UpdateEventStatus("ev-1", domain.DeliveryStatusProcessing); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("failed to processing: got %v, want ErrInvalidTransition", err)
+	}
+	if event, ok := s.GetEvent("ev-1"); !ok || event.Status != domain.DeliveryStatusFailed {
+		t.Fatalf("event = %+v, exists = %t; want failed", event, ok)
+	}
+}
+
+func TestMemoryStoreOnlyOneWorkerCanStartEvent(t *testing.T) {
+	s := NewMemoryStore()
+	if err := s.CreateEndpoint(domain.Endpoint{ID: "ep-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateEvent(domain.Event{ID: "ev-1", EndpointID: "ep-1", Status: domain.DeliveryStatusPending}); err != nil {
+		t.Fatal(err)
+	}
+
+	results := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			results <- s.UpdateEventStatus("ev-1", domain.DeliveryStatusProcessing)
+		}()
+	}
+	var successful, rejected int
+	for i := 0; i < 2; i++ {
+		switch err := <-results; {
+		case err == nil:
+			successful++
+		case errors.Is(err, ErrInvalidTransition):
+			rejected++
+		default:
+			t.Fatalf("unexpected transition error: %v", err)
+		}
+	}
+	if successful != 1 || rejected != 1 {
+		t.Fatalf("successes = %d, rejected = %d; want 1 and 1", successful, rejected)
+	}
+}
+
 func TestMemoryStoreConcurrentAccess(t *testing.T) {
 	s := NewMemoryStore()
 	var wg sync.WaitGroup

@@ -7,8 +7,9 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
-	ErrConflict = errors.New("conflict")
+	ErrNotFound          = errors.New("not found")
+	ErrConflict          = errors.New("conflict")
+	ErrInvalidTransition = errors.New("invalid status transition")
 )
 
 type Store interface {
@@ -17,6 +18,8 @@ type Store interface {
 	ListEndpoints() []domain.Endpoint
 	DeleteEndpoint(id string) error
 	CreateEvent(domain.Event) error
+	DeleteEvent(id string) error
+	UpdateEventStatus(id string, status domain.DeliveryStatus) error
 	GetEvent(id string) (domain.Event, bool)
 	ListEvents() []domain.Event
 }
