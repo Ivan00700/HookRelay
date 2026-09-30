@@ -10,13 +10,17 @@ import (
 	"hookrelay/internal/repository"
 )
 
-func RegisterEvents(mux *http.ServeMux, store repository.Store) {
-	mux.HandleFunc("POST /api/v1/events", handleCreateEvent(store))
+type EventPublisher interface {
+	Submit(eventID string) error
+}
+
+func RegisterEvents(mux *http.ServeMux, store repository.Store, publisher EventPublisher) {
+	mux.HandleFunc("POST /api/v1/events", handleCreateEvent(store, publisher))
 	mux.HandleFunc("GET /api/v1/events", handleListEvents(store))
 	mux.HandleFunc("GET /api/v1/events/{id}", handleGetEvent(store))
 }
 
-func handleCreateEvent(store repository.Store) http.HandlerFunc {
+func handleCreateEvent(store repository.Store, publisher EventPublisher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var input *domain.CreateEventInput
 		if requestErr := decodeJSON(w, r, &input); requestErr != nil {
@@ -62,6 +66,14 @@ func handleCreateEvent(store repository.Store) http.HandlerFunc {
 				log.Printf("create event: %v", err)
 				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 			}
+			return
+		}
+		if err := publisher.Submit(event.ID); err != nil {
+			if rollbackErr := store.DeleteEvent(event.ID); rollbackErr != nil {
+				log.Printf("rollback event %s after enqueue error: %v", event.ID, rollbackErr)
+			}
+			log.Printf("enqueue event %s: %v", event.ID, err)
+			writeError(w, http.StatusServiceUnavailable, "delivery_unavailable", "delivery queue is unavailable", "")
 			return
 		}
 		writeJSON(w, http.StatusCreated, event)

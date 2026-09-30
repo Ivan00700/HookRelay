@@ -2,21 +2,32 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"hookrelay/internal/delivery"
 	"hookrelay/internal/domain"
 	"hookrelay/internal/repository"
 )
+
+type noOpPublisher struct{}
+
+func (noOpPublisher) Submit(string) error { return nil }
+
+type rejectingPublisher struct{}
+
+func (rejectingPublisher) Submit(string) error { return errors.New("queue unavailable") }
 
 func testMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	store := repository.NewMemoryStore()
 	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store)
+	RegisterEvents(mux, store, noOpPublisher{})
 	return mux
 }
 
@@ -97,6 +108,79 @@ func TestDeleteEndpointWithoutEvents(t *testing.T) {
 	assertAPIError(t, request(mux, http.MethodGet, "/api/v1/endpoints/"+endpoint.ID, ""), http.StatusNotFound, "not_found", "")
 	assertAPIError(t, request(mux, http.MethodDelete, "/api/v1/endpoints/"+endpoint.ID, ""), http.StatusNotFound, "not_found", "")
 	assertAPIError(t, request(mux, http.MethodGet, "/api/v1/events/missing", ""), http.StatusNotFound, "not_found", "")
+}
+
+func TestCreateEventRollsBackWhenQueueUnavailable(t *testing.T) {
+	store := repository.NewMemoryStore()
+	if err := store.CreateEndpoint(domain.Endpoint{ID: "ep-1"}); err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	RegisterEvents(mux, store, rejectingPublisher{})
+	response := request(mux, http.MethodPost, "/api/v1/events", `{"endpoint_id":"ep-1","type":"order.created","payload":{}}`)
+	assertAPIError(t, response, http.StatusServiceUnavailable, "delivery_unavailable", "")
+	if got := store.ListEvents(); len(got) != 0 {
+		t.Fatalf("events after failed enqueue = %+v, want none", got)
+	}
+}
+
+func TestEventIsDeliveredByPool(t *testing.T) {
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.Header.Get("Content-Type") != "application/json" || r.Header.Get("X-HookRelay-Event-ID") == "" {
+			t.Errorf("unexpected delivery request: method=%s headers=%v", r.Method, r.Header)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer receiver.Close()
+
+	store := repository.NewMemoryStore()
+	pool, err := delivery.NewPool(store, delivery.NewSender(receiver.Client()), 2, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	mux := http.NewServeMux()
+	RegisterEndpoints(mux, store)
+	RegisterEvents(mux, store, pool)
+
+	endpointBody := fmt.Sprintf(`{"name":"orders","url":%q,"secret":"private"}`, receiver.URL)
+	createdEndpoint := request(mux, http.MethodPost, "/api/v1/endpoints", endpointBody)
+	if createdEndpoint.Code != http.StatusCreated {
+		t.Fatalf("create endpoint: %d %s", createdEndpoint.Code, createdEndpoint.Body.String())
+	}
+	var endpoint domain.Endpoint
+	if err := json.Unmarshal(createdEndpoint.Body.Bytes(), &endpoint); err != nil {
+		t.Fatal(err)
+	}
+	eventBody := fmt.Sprintf(`{"endpoint_id":%q,"type":"order.created","payload":{"order_id":42}}`, endpoint.ID)
+	createdEvent := request(mux, http.MethodPost, "/api/v1/events", eventBody)
+	if createdEvent.Code != http.StatusCreated {
+		t.Fatalf("create event: %d %s", createdEvent.Code, createdEvent.Body.String())
+	}
+	var event domain.Event
+	if err := json.Unmarshal(createdEvent.Body.Bytes(), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event.Status != domain.DeliveryStatusPending {
+		t.Fatalf("created event status = %s, want pending", event.Status)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		response := request(mux, http.MethodGet, "/api/v1/events/"+event.ID, "")
+		if response.Code != http.StatusOK {
+			t.Fatalf("get event: %d %s", response.Code, response.Body.String())
+		}
+		var current domain.Event
+		if err := json.Unmarshal(response.Body.Bytes(), &current); err != nil {
+			t.Fatal(err)
+		}
+		if current.Status == domain.DeliveryStatusDelivered {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("event %s was not delivered", event.ID)
 }
 
 func TestCreateEndpointErrors(t *testing.T) {

@@ -1,0 +1,58 @@
+package delivery
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	"hookrelay/internal/domain"
+)
+
+const requestTimeout = 3 * time.Second
+
+type Sender struct {
+	client *http.Client
+}
+
+func NewSender(client *http.Client) *Sender {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	// A redirect is a non-2xx response, not permission to send the payload elsewhere.
+	configuredClient := *client
+	configuredClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return &Sender{client: &configuredClient}
+}
+
+func (s *Sender) Send(ctx context.Context, event domain.Event, endpoint domain.Endpoint) error {
+	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+
+	request, err := http.NewRequestWithContext(
+		requestCtx,
+		http.MethodPost,
+		endpoint.URL,
+		bytes.NewReader(event.Payload),
+	)
+	if err != nil {
+		return fmt.Errorf("create delivery request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-HookRelay-Event-ID", event.ID)
+
+	response, err := s.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("send delivery request: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("delivery returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
