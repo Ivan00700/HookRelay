@@ -4,6 +4,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"hookrelay/internal/httpapi"
+	"hookrelay/internal/repository"
 )
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -29,6 +32,10 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
+
+	store := repository.NewMemoryStore()
+	httpapi.RegisterEndpoints(mux, store)
+	httpapi.RegisterEvents(mux, store)
 
 	srv := &http.Server{
 		Addr:    ":" + port,

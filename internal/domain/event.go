@@ -19,3 +19,14 @@ type CreateEventInput struct {
 	Type       string          `json:"type"`
 	Payload    json.RawMessage `json:"payload"`
 }
+
+func CanTransition(from, to DeliveryStatus) bool {
+	switch from {
+	case DeliveryStatusPending:
+		return to == DeliveryStatusProcessing
+	case DeliveryStatusProcessing:
+		return to == DeliveryStatusDelivered || to == DeliveryStatusFailed
+	default:
+		return false
+	}
+}
