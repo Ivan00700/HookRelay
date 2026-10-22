@@ -84,10 +84,12 @@ go run ./cmd/dbcheck
 
 ```powershell
 $env:TEST_DATABASE_URL = $env:DATABASE_URL
-go test ./internal/postgres -run TestOpenIntegration -v
+go test ./internal/postgres -run Integration -count=1 -v
 ```
 
-Тест выполняет `SELECT 1` и не изменяет данные. Удалить переменные из текущего терминала можно так:
+Проверка соединения выполняет `SELECT 1`. Тест схемы создаёт отдельную схему, применяет SQL-файлы и проверяет ключи, связи, статусы, JSON и ограничения попыток доставки. Всё выполняется в транзакции с откатом; таблицы приложения и их данные не изменяются. Пользователю тестовой базы нужно право создавать схемы. Без `TEST_DATABASE_URL` оба интеграционных теста пропускаются.
+
+Удалить переменные из текущего терминала можно так:
 
 ```powershell
 Remove-Item Env:DATABASE_URL,Env:TEST_DATABASE_URL -ErrorAction SilentlyContinue
