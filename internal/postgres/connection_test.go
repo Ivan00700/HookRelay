@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -35,6 +36,37 @@ func TestOpenCanceledContext(t *testing.T) {
 	pool, err := Open(ctx, "postgres://hookrelay@127.0.0.1:1/hookrelay?sslmode=disable")
 	if pool != nil || !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected canceled context and nil pool, got pool=%v err=%v", pool, err)
+	}
+}
+
+func TestOpenDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for connection: %v", err)
+	}
+	release := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Accept TCP but never answer the PostgreSQL handshake.
+		<-release
+	}()
+	t.Cleanup(func() {
+		close(release)
+		listener.Close()
+		<-done
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	pool, err := Open(ctx, "postgres://hookrelay@"+listener.Addr().String()+"/hookrelay?sslmode=disable")
+	if pool != nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected deadline error and nil pool, got pool=%v err=%v", pool, err)
 	}
 }
 
