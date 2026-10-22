@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"hookrelay/internal/domain"
 	"hookrelay/internal/repository"
@@ -74,35 +75,37 @@ func (p *Pool) worker() {
 }
 
 func (p *Pool) deliver(eventID string) {
-	if err := p.store.UpdateEventStatus(eventID, domain.DeliveryStatusProcessing); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := p.store.UpdateEventStatus(ctx, eventID, domain.DeliveryStatusProcessing); err != nil {
 		log.Printf("start delivery for event %s: %v", eventID, err)
 		return
 	}
 
-	event, ok := p.store.GetEvent(eventID)
-	if !ok {
-		log.Printf("event %s disappeared during delivery", eventID)
+	event, err := p.store.GetEvent(ctx, eventID)
+	if err != nil {
+		log.Printf("get event %s during delivery: %v", eventID, err)
 		return
 	}
-	endpoint, ok := p.store.GetEndpoint(event.EndpointID)
-	if !ok {
-		p.finish(eventID, domain.DeliveryStatusFailed, fmt.Errorf("endpoint %s not found", event.EndpointID))
+	endpoint, err := p.store.GetEndpoint(ctx, event.EndpointID)
+	if err != nil {
+		p.finish(ctx, eventID, domain.DeliveryStatusFailed, fmt.Errorf("get endpoint %s: %w", event.EndpointID, err))
 		return
 	}
 
-	err := p.sender.Send(context.Background(), event, endpoint)
+	err = p.sender.Send(ctx, event, endpoint)
 	if err != nil {
-		p.finish(eventID, domain.DeliveryStatusFailed, err)
+		p.finish(ctx, eventID, domain.DeliveryStatusFailed, err)
 		return
 	}
-	p.finish(eventID, domain.DeliveryStatusDelivered, nil)
+	p.finish(ctx, eventID, domain.DeliveryStatusDelivered, nil)
 }
 
-func (p *Pool) finish(eventID string, status domain.DeliveryStatus, deliveryErr error) {
+func (p *Pool) finish(ctx context.Context, eventID string, status domain.DeliveryStatus, deliveryErr error) {
 	if deliveryErr != nil {
 		log.Printf("delivery of event %s failed: %v", eventID, deliveryErr)
 	}
-	if err := p.store.UpdateEventStatus(eventID, status); err != nil {
+	if err := p.store.UpdateEventStatus(ctx, eventID, status); err != nil {
 		log.Printf("finish delivery of event %s: %v", eventID, err)
 	}
 }

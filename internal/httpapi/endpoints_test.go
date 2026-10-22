@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,7 +32,7 @@ func TestListEndpointsEmpty(t *testing.T) {
 
 func TestListEndpointsReturnsStoredEndpointWithoutSecret(t *testing.T) {
 	store := repository.NewMemoryStore()
-	if err := store.CreateEndpoint(domain.Endpoint{
+	if err := store.CreateEndpoint(context.Background(), domain.Endpoint{
 		ID: "ep-1", Name: "orders", URL: "https://example.com/hook", Secret: "private",
 	}); err != nil {
 		t.Fatal(err)

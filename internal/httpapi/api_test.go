@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -112,14 +113,14 @@ func TestDeleteEndpointWithoutEvents(t *testing.T) {
 
 func TestCreateEventRollsBackWhenQueueUnavailable(t *testing.T) {
 	store := repository.NewMemoryStore()
-	if err := store.CreateEndpoint(domain.Endpoint{ID: "ep-1"}); err != nil {
+	if err := store.CreateEndpoint(context.Background(), domain.Endpoint{ID: "ep-1"}); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
 	RegisterEvents(mux, store, rejectingPublisher{})
 	response := request(mux, http.MethodPost, "/api/v1/events", `{"endpoint_id":"ep-1","type":"order.created","payload":{}}`)
 	assertAPIError(t, response, http.StatusServiceUnavailable, "delivery_unavailable", "")
-	if got := store.ListEvents(); len(got) != 0 {
+	if got, err := store.ListEvents(context.Background()); err != nil || len(got) != 0 {
 		t.Fatalf("events after failed enqueue = %+v, want none", got)
 	}
 }

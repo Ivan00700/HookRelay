@@ -11,15 +11,21 @@ import (
 )
 
 func RegisterEndpoints(mux *http.ServeMux, store repository.Store) {
-	mux.HandleFunc("POST /api/v1/endpoints", handleCreateEndpoint(store))
-	mux.HandleFunc("GET /api/v1/endpoints", handleListEndpoints(store))
-	mux.HandleFunc("GET /api/v1/endpoints/{id}", handleGetEndpoint(store))
-	mux.HandleFunc("DELETE /api/v1/endpoints/{id}", handleDeleteEndpoint(store))
+	mux.HandleFunc("POST /api/v1/endpoints", withStorageTimeout(handleCreateEndpoint(store)))
+	mux.HandleFunc("GET /api/v1/endpoints", withStorageTimeout(handleListEndpoints(store)))
+	mux.HandleFunc("GET /api/v1/endpoints/{id}", withStorageTimeout(handleGetEndpoint(store)))
+	mux.HandleFunc("DELETE /api/v1/endpoints/{id}", withStorageTimeout(handleDeleteEndpoint(store)))
 }
 
 func handleListEndpoints(store repository.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, store.ListEndpoints())
+		endpoints, err := store.ListEndpoints(r.Context())
+		if err != nil {
+			log.Printf("list endpoints: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
+			return
+		}
+		writeJSON(w, http.StatusOK, endpoints)
 	}
 }
 
@@ -56,9 +62,9 @@ func handleCreateEndpoint(store repository.Store) http.HandlerFunc {
 			Name:      input.Name,
 			URL:       input.URL,
 			Secret:    input.Secret,
-			CreatedAt: time.Now().UTC(),
+			CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
 		}
-		if err := store.CreateEndpoint(endpoint); err != nil {
+		if err := store.CreateEndpoint(r.Context(), endpoint); err != nil {
 			if errors.Is(err, repository.ErrConflict) {
 				writeError(w, http.StatusConflict, "conflict", "endpoint ID already exists", "")
 				return
@@ -73,9 +79,14 @@ func handleCreateEndpoint(store repository.Store) http.HandlerFunc {
 
 func handleGetEndpoint(store repository.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		endpoint, ok := store.GetEndpoint(r.PathValue("id"))
-		if !ok {
-			writeError(w, http.StatusNotFound, "not_found", "endpoint not found", "")
+		endpoint, err := store.GetEndpoint(r.Context(), r.PathValue("id"))
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "not_found", "endpoint not found", "")
+			} else {
+				log.Printf("get endpoint: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
+			}
 			return
 		}
 		writeJSON(w, http.StatusOK, endpoint)
@@ -84,7 +95,7 @@ func handleGetEndpoint(store repository.Store) http.HandlerFunc {
 
 func handleDeleteEndpoint(store repository.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		err := store.DeleteEndpoint(r.PathValue("id"))
+		err := store.DeleteEndpoint(r.Context(), r.PathValue("id"))
 		switch {
 		case err == nil:
 			w.WriteHeader(http.StatusNoContent)

@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -8,9 +9,18 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 )
 
 const maxRequestBodyBytes = 1 << 20
+
+func withStorageTimeout(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		next(w, r.WithContext(ctx))
+	}
+}
 
 type apiError struct {
 	status  int
