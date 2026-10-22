@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
@@ -15,9 +16,9 @@ type EventPublisher interface {
 }
 
 func RegisterEvents(mux *http.ServeMux, store repository.Store, publisher EventPublisher) {
-	mux.HandleFunc("POST /api/v1/events", handleCreateEvent(store, publisher))
-	mux.HandleFunc("GET /api/v1/events", handleListEvents(store))
-	mux.HandleFunc("GET /api/v1/events/{id}", handleGetEvent(store))
+	mux.HandleFunc("POST /api/v1/events", withStorageTimeout(handleCreateEvent(store, publisher)))
+	mux.HandleFunc("GET /api/v1/events", withStorageTimeout(handleListEvents(store)))
+	mux.HandleFunc("GET /api/v1/events/{id}", withStorageTimeout(handleGetEvent(store)))
 }
 
 func handleCreateEvent(store repository.Store, publisher EventPublisher) http.HandlerFunc {
@@ -54,9 +55,9 @@ func handleCreateEvent(store repository.Store, publisher EventPublisher) http.Ha
 			Type:       input.Type,
 			Payload:    input.Payload,
 			Status:     domain.DeliveryStatusPending,
-			CreatedAt:  time.Now().UTC(),
+			CreatedAt:  time.Now().UTC().Truncate(time.Microsecond),
 		}
-		if err := store.CreateEvent(event); err != nil {
+		if err := store.CreateEvent(r.Context(), event); err != nil {
 			switch {
 			case errors.Is(err, repository.ErrNotFound):
 				writeError(w, http.StatusNotFound, "not_found", "endpoint not found", "")
@@ -69,7 +70,9 @@ func handleCreateEvent(store repository.Store, publisher EventPublisher) http.Ha
 			return
 		}
 		if err := publisher.Submit(event.ID); err != nil {
-			if rollbackErr := store.DeleteEvent(event.ID); rollbackErr != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if rollbackErr := store.DeleteEvent(cleanupCtx, event.ID); rollbackErr != nil {
 				log.Printf("rollback event %s after enqueue error: %v", event.ID, rollbackErr)
 			}
 			log.Printf("enqueue event %s: %v", event.ID, err)
@@ -82,15 +85,26 @@ func handleCreateEvent(store repository.Store, publisher EventPublisher) http.Ha
 
 func handleListEvents(store repository.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, store.ListEvents())
+		events, err := store.ListEvents(r.Context())
+		if err != nil {
+			log.Printf("list events: %v", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
+			return
+		}
+		writeJSON(w, http.StatusOK, events)
 	}
 }
 
 func handleGetEvent(store repository.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		event, ok := store.GetEvent(r.PathValue("id"))
-		if !ok {
-			writeError(w, http.StatusNotFound, "not_found", "event not found", "")
+		event, err := store.GetEvent(r.Context(), r.PathValue("id"))
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "not_found", "event not found", "")
+			} else {
+				log.Printf("get event: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
+			}
 			return
 		}
 		writeJSON(w, http.StatusOK, event)

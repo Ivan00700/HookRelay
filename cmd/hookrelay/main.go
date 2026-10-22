@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"hookrelay/internal/delivery"
 	"hookrelay/internal/httpapi"
+	"hookrelay/internal/postgres"
 	"hookrelay/internal/repository"
 )
 
@@ -31,6 +33,24 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	stopCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := run(stopCtx)
+	stopSignals()
+	if err != nil {
+		log.Printf("server stopped: %v", err)
+		os.Exit(1)
+	}
+}
+
+func run(stopCtx context.Context) error {
+	startupCtx, cancel := context.WithTimeout(stopCtx, 5*time.Second)
+	database, err := postgres.Open(startupCtx, os.Getenv("DATABASE_URL"))
+	cancel()
+	if err != nil {
+		return fmt.Errorf("open storage: %w", err)
+	}
+	defer database.Close()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 
@@ -39,10 +59,10 @@ func main() {
 		port = "8080"
 	}
 
-	store := repository.NewMemoryStore()
+	store := repository.NewPostgresStore(database)
 	pool, err := delivery.NewPool(store, delivery.NewSender(&http.Client{}), 2, 64)
 	if err != nil {
-		log.Fatalf("create delivery pool: %v", err)
+		return fmt.Errorf("create delivery pool: %w", err)
 	}
 	httpapi.RegisterEndpoints(mux, store)
 	httpapi.RegisterEvents(mux, store, pool)
@@ -53,18 +73,18 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	stopCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stopSignals()
 	serveErrors := make(chan error, 1)
 	go func() {
 		serveErrors <- srv.ListenAndServe()
 	}()
 
 	log.Printf("starting server on http://localhost:%s", port)
+	var runErr error
 	select {
 	case <-stopCtx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := srv.Shutdown(shutdownCtx); err != nil {
+			runErr = fmt.Errorf("shutdown HTTP server: %w", err)
 			log.Printf("graceful HTTP shutdown: %v", err)
 			if closeErr := srv.Close(); closeErr != nil {
 				log.Printf("close HTTP server: %v", closeErr)
@@ -74,9 +94,10 @@ func main() {
 		<-serveErrors
 	case err := <-serveErrors:
 		if !errors.Is(err, http.ErrServerClosed) {
-			log.Printf("HTTP server stopped: %v", err)
+			runErr = err
 		}
 	}
 	pool.Close()
 	log.Print("delivery workers stopped")
+	return runErr
 }

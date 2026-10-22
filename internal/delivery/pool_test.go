@@ -22,11 +22,11 @@ func (f senderFunc) Send(ctx context.Context, event domain.Event, endpoint domai
 func poolStore(t *testing.T, ids ...string) *repository.MemoryStore {
 	t.Helper()
 	store := repository.NewMemoryStore()
-	if err := store.CreateEndpoint(domain.Endpoint{ID: "ep-1", URL: "http://example.com/webhook"}); err != nil {
+	if err := store.CreateEndpoint(context.Background(), domain.Endpoint{ID: "ep-1", URL: "http://example.com/webhook"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, id := range ids {
-		if err := store.CreateEvent(domain.Event{ID: id, EndpointID: "ep-1", Status: domain.DeliveryStatusPending}); err != nil {
+		if err := store.CreateEvent(context.Background(), domain.Event{ID: id, EndpointID: "ep-1", Status: domain.DeliveryStatusPending}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -60,9 +60,9 @@ func TestPoolDeliversAndDrainsOnClose(t *testing.T) {
 		"ok":   domain.DeliveryStatusDelivered,
 		"fail": domain.DeliveryStatusFailed,
 	} {
-		event, ok := store.GetEvent(id)
-		if !ok || event.Status != want {
-			t.Errorf("event %s = %+v, exists = %t; want %s", id, event, ok, want)
+		event, err := store.GetEvent(context.Background(), id)
+		if err != nil || event.Status != want {
+			t.Errorf("event %s = %+v, error = %v; want %s", id, event, err, want)
 		}
 	}
 	if err := pool.Submit("ok"); !errors.Is(err, ErrClosed) {
@@ -119,7 +119,7 @@ func TestPoolWorkerLimit(t *testing.T) {
 		t.Errorf("maximum active workers = %d, want at most 2", got)
 	}
 	for _, id := range ids {
-		event, _ := store.GetEvent(id)
+		event, _ := store.GetEvent(context.Background(), id)
 		if event.Status != domain.DeliveryStatusDelivered {
 			t.Errorf("event %s status = %s", id, event.Status)
 		}

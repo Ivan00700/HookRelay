@@ -2,6 +2,7 @@ package repository
 
 import (
 	"bytes"
+	"context"
 	"sort"
 	"sync"
 
@@ -14,6 +15,8 @@ type MemoryStore struct {
 	events    map[string]domain.Event
 }
 
+var _ Store = (*MemoryStore)(nil)
+
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		endpoints: make(map[string]domain.Endpoint),
@@ -21,17 +24,26 @@ func NewMemoryStore() *MemoryStore {
 	}
 }
 
-func (s *MemoryStore) GetEndpoint(id string) (domain.Endpoint, bool) {
+func (s *MemoryStore) GetEndpoint(ctx context.Context, id string) (domain.Endpoint, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return domain.Endpoint{}, err
+	}
 
 	endpoint, ok := s.endpoints[id]
-	return endpoint, ok
+	if !ok {
+		return domain.Endpoint{}, ErrNotFound
+	}
+	return endpoint, nil
 }
 
-func (s *MemoryStore) CreateEndpoint(endpoint domain.Endpoint) error {
+func (s *MemoryStore) CreateEndpoint(ctx context.Context, endpoint domain.Endpoint) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	if _, ok := s.endpoints[endpoint.ID]; ok {
 		return ErrConflict
@@ -41,7 +53,10 @@ func (s *MemoryStore) CreateEndpoint(endpoint domain.Endpoint) error {
 	return nil
 }
 
-func (s *MemoryStore) ListEndpoints() []domain.Endpoint {
+func (s *MemoryStore) ListEndpoints(ctx context.Context) ([]domain.Endpoint, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	endpoints := make([]domain.Endpoint, 0, len(s.endpoints))
 	for _, endpoint := range s.endpoints {
@@ -52,12 +67,15 @@ func (s *MemoryStore) ListEndpoints() []domain.Endpoint {
 	sort.Slice(endpoints, func(i, j int) bool {
 		return endpoints[i].ID < endpoints[j].ID
 	})
-	return endpoints
+	return endpoints, nil
 }
 
-func (s *MemoryStore) DeleteEndpoint(id string) error {
+func (s *MemoryStore) DeleteEndpoint(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	if _, ok := s.endpoints[id]; !ok {
 		return ErrNotFound
@@ -73,9 +91,12 @@ func (s *MemoryStore) DeleteEndpoint(id string) error {
 	return nil
 }
 
-func (s *MemoryStore) CreateEvent(event domain.Event) error {
+func (s *MemoryStore) CreateEvent(ctx context.Context, event domain.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	if _, ok := s.endpoints[event.EndpointID]; !ok {
 		return ErrNotFound
@@ -89,9 +110,12 @@ func (s *MemoryStore) CreateEvent(event domain.Event) error {
 	return nil
 }
 
-func (s *MemoryStore) DeleteEvent(id string) error {
+func (s *MemoryStore) DeleteEvent(ctx context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if _, ok := s.events[id]; !ok {
 		return ErrNotFound
 	}
@@ -99,9 +123,12 @@ func (s *MemoryStore) DeleteEvent(id string) error {
 	return nil
 }
 
-func (s *MemoryStore) UpdateEventStatus(id string, status domain.DeliveryStatus) error {
+func (s *MemoryStore) UpdateEventStatus(ctx context.Context, id string, status domain.DeliveryStatus) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	event, ok := s.events[id]
 	if !ok {
@@ -115,19 +142,25 @@ func (s *MemoryStore) UpdateEventStatus(id string, status domain.DeliveryStatus)
 	return nil
 }
 
-func (s *MemoryStore) GetEvent(id string) (domain.Event, bool) {
+func (s *MemoryStore) GetEvent(ctx context.Context, id string) (domain.Event, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return domain.Event{}, err
+	}
 
 	event, ok := s.events[id]
 	if !ok {
-		return domain.Event{}, false
+		return domain.Event{}, ErrNotFound
 	}
 	event.Payload = bytes.Clone(event.Payload)
-	return event, true
+	return event, nil
 }
 
-func (s *MemoryStore) ListEvents() []domain.Event {
+func (s *MemoryStore) ListEvents(ctx context.Context) ([]domain.Event, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	s.mu.RLock()
 	events := make([]domain.Event, 0, len(s.events))
 	for _, event := range s.events {
@@ -139,5 +172,5 @@ func (s *MemoryStore) ListEvents() []domain.Event {
 	sort.Slice(events, func(i, j int) bool {
 		return events[i].ID < events[j].ID
 	})
-	return events
+	return events, nil
 }

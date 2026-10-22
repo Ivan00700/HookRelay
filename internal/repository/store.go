@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"hookrelay/internal/domain"
@@ -13,13 +14,13 @@ var (
 )
 
 type Store interface {
-	CreateEndpoint(domain.Endpoint) error
-	GetEndpoint(id string) (domain.Endpoint, bool)
-	ListEndpoints() []domain.Endpoint
-	DeleteEndpoint(id string) error
-	CreateEvent(domain.Event) error
-	DeleteEvent(id string) error
-	UpdateEventStatus(id string, status domain.DeliveryStatus) error
-	GetEvent(id string) (domain.Event, bool)
-	ListEvents() []domain.Event
+	CreateEndpoint(context.Context, domain.Endpoint) error
+	GetEndpoint(context.Context, string) (domain.Endpoint, error)
+	ListEndpoints(context.Context) ([]domain.Endpoint, error)
+	DeleteEndpoint(context.Context, string) error
+	CreateEvent(context.Context, domain.Event) error
+	DeleteEvent(context.Context, string) error
+	UpdateEventStatus(context.Context, string, domain.DeliveryStatus) error
+	GetEvent(context.Context, string) (domain.Event, error)
+	ListEvents(context.Context) ([]domain.Event, error)
 }
