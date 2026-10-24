@@ -87,7 +87,7 @@ func TestQueueRecoversAfterProcessCrashIntegration(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer receiver.Close()
-	if err := store.CreateEndpoint(ctx, domain.Endpoint{ID: "endpoint", URL: receiver.URL, CreatedAt: time.Now().UTC()}); err != nil {
+	if err := store.CreateEndpoint(ctx, domain.Endpoint{ID: "endpoint", URL: receiver.URL, Secret: "crash-secret", CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.CreateEvent(ctx, domain.Event{ID: "event", EndpointID: "endpoint", Type: "test", Payload: json.RawMessage(`{}`), Status: domain.DeliveryStatusPending, CreatedAt: time.Now().UTC()}); err != nil {
