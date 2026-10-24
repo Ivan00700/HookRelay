@@ -48,7 +48,7 @@ $env:WEBHOOK_SECRET = "dev-secret"
 go run ./examples/receiver
 ```
 
-В HookRelay создайте endpoint с URL `http://127.0.0.1:9000/webhook` и `secret: "dev-secret"`, затем отправьте событие через API. Полный сценарий создания находится в README.
+В HookRelay создайте endpoint с URL `http://127.0.0.1:9000/webhook` и `secret: "dev-secret"`, затем отправьте событие через API. Полный сценарий создания находится в [HTTP API](api.md).
 
 Пример слушает только `127.0.0.1:9000`. Его переменная окружения задаётся в том же терминале, где он запускается. Go автоматически не загружает `.env`. При отсутствии или пустом `WEBHOOK_SECRET` процесс завершается до запуска HTTP-сервера.
 
