@@ -2,23 +2,8 @@ package domain
 
 import "time"
 
+// Четыре попытки: первая отправка и три повтора.
 const MaxDeliveryAttempts = 4
-
-type DeliveryAttempt struct {
-	ID            int64      `json:"id"`
-	EventID       string     `json:"event_id"`
-	AttemptNumber int        `json:"attempt_number"`
-	StartedAt     time.Time  `json:"started_at"`
-	FinishedAt    *time.Time `json:"finished_at"`
-	HTTPStatus    *int       `json:"http_status"`
-	ErrorMessage  string     `json:"error_message,omitempty"`
-}
-
-type DeliveryResult struct {
-	HTTPStatus   int
-	ErrorMessage string
-	Retryable    bool
-}
 
 func (r DeliveryResult) Valid() bool {
 	if r.HTTPStatus != 0 && (r.HTTPStatus < 100 || r.HTTPStatus > 599) {
@@ -30,6 +15,7 @@ func (r DeliveryResult) Valid() bool {
 	return true
 }
 
+// RetryDelay задаёт ожидание после неудачной попытки. Ноль означает конец цикла.
 func RetryDelay(attempt int) time.Duration {
 	switch attempt {
 	case 1:
@@ -47,7 +33,8 @@ func (r DeliveryResult) NextStatus(attempt int) (DeliveryStatus, time.Duration) 
 	if r.ErrorMessage == "" && r.HTTPStatus >= 200 && r.HTTPStatus < 300 {
 		return DeliveryStatusDelivered, 0
 	}
-	if delay := RetryDelay(attempt); r.Retryable && delay > 0 {
+	delay := RetryDelay(attempt)
+	if r.Retryable && delay > 0 {
 		return DeliveryStatusPending, delay
 	}
 	return DeliveryStatusFailed, 0

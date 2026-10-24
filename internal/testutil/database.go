@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Database creates an isolated, migrated schema and removes it after the test.
+// Database создаёт отдельную схему с миграциями и удаляет её после теста.
 func Database(t *testing.T) (*pgxpool.Pool, string) {
 	t.Helper()
 	rawURL := os.Getenv("TEST_DATABASE_URL")

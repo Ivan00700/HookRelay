@@ -53,7 +53,7 @@ func TestOpenDeadline(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		// Accept TCP but never answer the PostgreSQL handshake.
+		// Принимаем TCP-соединение, но не отвечаем на приветствие PostgreSQL.
 		<-release
 	}()
 	t.Cleanup(func() {

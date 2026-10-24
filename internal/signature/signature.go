@@ -7,22 +7,25 @@ import (
 	"strings"
 )
 
-const Header = "X-HookRelay-Signature"
+const (
+	Header = "X-HookRelay-Signature"
+	prefix = "sha256="
+)
 
-const prefix = "sha256="
-
-// Sign signs the exact bytes that will be sent in the HTTP request body.
+// Sign подписывает точные байты исходящего HTTP-тела.
 func Sign(body []byte, secret string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	return prefix + hex.EncodeToString(mac.Sum(nil))
 }
 
-// Verify checks the signature before the receiver processes the body.
+// Verify проверяет формат заголовка и подпись до обработки тела.
 func Verify(body []byte, secret, value string) bool {
 	if secret == "" || !strings.HasPrefix(value, prefix) {
 		return false
 	}
+
+	// 1) Восстанавливаем байты подписи из заголовка.
 	encoded := strings.TrimPrefix(value, prefix)
 	if len(encoded) != sha256.Size*2 {
 		return false
@@ -31,6 +34,8 @@ func Verify(body []byte, secret, value string) bool {
 	if err != nil {
 		return false
 	}
+
+	// 2) Считаем HMAC над принятым телом и сравниваем MAC через hmac.Equal.
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
 	return hmac.Equal(actual, mac.Sum(nil))

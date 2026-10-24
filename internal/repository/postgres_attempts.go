@@ -42,6 +42,7 @@ func (s *PostgresStore) ListAttempts(ctx context.Context, eventID string) ([]dom
 }
 
 func (s *PostgresStore) RetryEvent(ctx context.Context, id string) (domain.Event, error) {
+	// Условие failed допускает только один переход при одновременных запросах.
 	event, err := scanEvent(s.pool.QueryRow(ctx, `
 		UPDATE events SET status = 'pending', cycle_attempts = 0,
 		    next_attempt_at = clock_timestamp(), lease_until = NULL

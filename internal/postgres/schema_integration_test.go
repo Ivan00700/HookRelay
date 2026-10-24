@@ -58,7 +58,7 @@ func TestSchemaIntegration(t *testing.T) {
 		t.Fatalf("read migrations directory: %v", err)
 	}
 	applied := 0
-	// ReadDir returns entries sorted by name, matching the migration numbering.
+	// ReadDir сортирует имена, поэтому миграции применяются по номеру.
 	for _, file := range files {
 		if file.IsDir() || !strings.HasSuffix(file.Name(), ".sql") {
 			continue
@@ -120,7 +120,7 @@ func TestSchemaIntegration(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			// A nested transaction uses a savepoint, so expected SQL errors are isolated.
+			// Вложенная транзакция использует savepoint и изолирует ожидаемую SQL-ошибку.
 			checkTx, err := tx.Begin(ctx)
 			if err != nil {
 				t.Fatalf("begin constraint check: %v", err)

@@ -12,6 +12,7 @@ import (
 
 var _ DeliveryStore = (*PostgresStore)(nil)
 
+// Проверка схемы выполняется до запуска HTTP и воркеров.
 func (s *PostgresStore) CheckQueueSchema(ctx context.Context) error {
 	rows, err := s.pool.Query(ctx, `SELECT id, status, lease_version, lease_until, attempt_count, cycle_attempts, next_attempt_at FROM events LIMIT 0`)
 	if err != nil {
@@ -29,12 +30,9 @@ func (s *PostgresStore) ClaimEvent(ctx context.Context, lease time.Duration) (De
 	if err != nil {
 		return DeliveryJob{}, databaseError("begin event claim", err, ErrConflict)
 	}
-	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = tx.Rollback(cleanupCtx)
-	}()
+	defer rollback(tx)
 
+	// 1) Блокируем готовую строку, пропуская задания других воркеров.
 	var id string
 	var cycleAttempts int
 	err = tx.QueryRow(ctx, `
@@ -50,6 +48,8 @@ func (s *PostgresStore) ClaimEvent(ctx context.Context, lease time.Duration) (De
 	if err != nil {
 		return DeliveryJob{}, databaseError("select event to deliver", err, ErrConflict)
 	}
+
+	// 2) Закрываем прерванную попытку и проверяем лимит текущего цикла.
 	_, err = tx.Exec(ctx, `
 		UPDATE delivery_attempts
 		SET finished_at = GREATEST(clock_timestamp(), started_at), error_message = 'delivery interrupted: lease expired'
@@ -67,6 +67,8 @@ func (s *PostgresStore) ClaimEvent(ctx context.Context, lease time.Duration) (De
 		}
 		return DeliveryJob{}, ErrNoJob
 	}
+
+	// 3) Выдаём новую аренду и начинаем запись попытки в той же транзакции.
 	var job DeliveryJob
 	err = tx.QueryRow(ctx, `
 		UPDATE events SET status = 'processing', lease_version = lease_version + 1,
@@ -89,6 +91,7 @@ func (s *PostgresStore) ClaimEvent(ctx context.Context, lease time.Duration) (De
 	if err != nil {
 		return DeliveryJob{}, databaseError("start delivery attempt", err, ErrConflict)
 	}
+	// После COMMIT воркер сможет выполнить HTTP без открытой транзакции.
 	if err := tx.Commit(ctx); err != nil {
 		return DeliveryJob{}, databaseError("commit event claim", err, ErrConflict)
 	}
@@ -105,11 +108,9 @@ func (s *PostgresStore) FinishEvent(ctx context.Context, job DeliveryJob, result
 	if err != nil {
 		return databaseError("begin delivery result", err, ErrConflict)
 	}
-	defer func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = tx.Rollback(cleanupCtx)
-	}()
+	defer rollback(tx)
+
+	// 1) Проверяем, что результат прислал действующий владелец аренды.
 	var cycleAttempts int
 	err = tx.QueryRow(ctx, `
 		SELECT cycle_attempts FROM events
@@ -122,6 +123,8 @@ func (s *PostgresStore) FinishEvent(ctx context.Context, job DeliveryJob, result
 	if err != nil {
 		return databaseError("check delivery owner", err, ErrConflict)
 	}
+
+	// 2) Записываем результат текущей попытки.
 	changed, err := tx.Exec(ctx, `
 		UPDATE delivery_attempts
 		SET finished_at = GREATEST(clock_timestamp(), started_at),
@@ -134,6 +137,8 @@ func (s *PostgresStore) FinishEvent(ctx context.Context, job DeliveryJob, result
 	if changed.RowsAffected() != 1 {
 		return ErrLeaseLost
 	}
+
+	// 3) Меняем статус или назначаем повтор. История и событие фиксируются вместе.
 	status, delay := result.NextStatus(cycleAttempts)
 	changed, err = tx.Exec(ctx, `
 		UPDATE events SET status = $1, lease_until = NULL,

@@ -1,4 +1,4 @@
-package main
+package orchestrator
 
 import (
 	"context"
@@ -24,7 +24,7 @@ import (
 
 func TestRunRequiresDatabaseURL(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
-	if err := run(context.Background()); !errors.Is(err, postgres.ErrMissingURL) {
+	if err := Run(context.Background()); !errors.Is(err, postgres.ErrMissingURL) {
 		t.Fatalf("expected missing DATABASE_URL error, got %v", err)
 	}
 }
@@ -37,7 +37,7 @@ func TestRunRejectsMissingQueueMigrationIntegration(t *testing.T) {
 	if _, err := database.Exec(ctx, `ALTER TABLE events DROP COLUMN lease_until`); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(ctx); err == nil || !strings.Contains(err.Error(), "queue schema") {
+	if err := Run(ctx); err == nil || !strings.Contains(err.Error(), "queue schema") {
 		t.Fatalf("expected queue schema startup error, got %v", err)
 	}
 }
@@ -58,7 +58,7 @@ func TestRunPostgresIntegration(t *testing.T) {
 		t.Setenv("HTTP_PORT", strconv.Itoa(port))
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
-		go func() { done <- run(ctx) }()
+		go func() { done <- Run(ctx) }()
 		stop := sync.OnceFunc(func() {
 			cancel()
 			select {

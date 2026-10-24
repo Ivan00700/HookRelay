@@ -20,6 +20,8 @@ func (s *MemoryStore) ClaimEvent(ctx context.Context, lease time.Duration) (Deli
 	if err := ctx.Err(); err != nil {
 		return DeliveryJob{}, err
 	}
+
+	// 1) Выбираем самое старое готовое событие под общей блокировкой.
 	now := time.Now().UTC()
 	var selected domain.Event
 	found := false
@@ -38,6 +40,8 @@ func (s *MemoryStore) ClaimEvent(ctx context.Context, lease time.Duration) (Deli
 	if !found {
 		return DeliveryJob{}, ErrNoJob
 	}
+
+	// 2) Закрываем прерванную попытку и ограничиваем число захватов.
 	for i := range s.attempts[selected.ID] {
 		attempt := &s.attempts[selected.ID][i]
 		if attempt.FinishedAt == nil {
@@ -52,6 +56,8 @@ func (s *MemoryStore) ClaimEvent(ctx context.Context, lease time.Duration) (Deli
 		delete(s.leases, selected.ID)
 		return DeliveryJob{}, ErrNoJob
 	}
+
+	// 3) Сохраняем аренду и начало новой попытки.
 	selected.Status = domain.DeliveryStatusProcessing
 	s.events[selected.ID] = selected
 	s.versions[selected.ID]++
@@ -60,11 +66,19 @@ func (s *MemoryStore) ClaimEvent(ctx context.Context, lease time.Duration) (Deli
 	s.lastAttemptID++
 	attemptNumber := len(s.attempts[selected.ID]) + 1
 	s.attempts[selected.ID] = append(s.attempts[selected.ID], domain.DeliveryAttempt{
-		ID: s.lastAttemptID, EventID: selected.ID, AttemptNumber: attemptNumber, StartedAt: now,
+		ID:            s.lastAttemptID,
+		EventID:       selected.ID,
+		AttemptNumber: attemptNumber,
+		StartedAt:     now,
 	})
 	selected.Payload = bytes.Clone(selected.Payload)
-	return DeliveryJob{Event: selected, LeaseVersion: s.versions[selected.ID], LeaseUntil: s.leases[selected.ID],
-		AttemptNumber: attemptNumber, CycleAttempt: s.cycles[selected.ID]}, nil
+	return DeliveryJob{
+		Event:         selected,
+		LeaseVersion:  s.versions[selected.ID],
+		LeaseUntil:    s.leases[selected.ID],
+		AttemptNumber: attemptNumber,
+		CycleAttempt:  s.cycles[selected.ID],
+	}, nil
 }
 
 func (s *MemoryStore) FinishEvent(ctx context.Context, job DeliveryJob, result domain.DeliveryResult) error {
@@ -76,6 +90,8 @@ func (s *MemoryStore) FinishEvent(ctx context.Context, job DeliveryJob, result d
 	if !result.Valid() {
 		return ErrInvalidTransition
 	}
+
+	// 1) Проверяем аренду и наличие незавершённой попытки.
 	event, ok := s.events[job.Event.ID]
 	if !ok || event.Status != domain.DeliveryStatusProcessing ||
 		s.versions[event.ID] != job.LeaseVersion || !s.leases[event.ID].After(time.Now()) {
@@ -85,6 +101,8 @@ func (s *MemoryStore) FinishEvent(ctx context.Context, job DeliveryJob, result d
 	if index < 0 || index >= len(s.attempts[event.ID]) || s.attempts[event.ID][index].FinishedAt != nil {
 		return ErrLeaseLost
 	}
+
+	// 2) Обновляем историю и событие, не отпуская блокировку.
 	attempt := &s.attempts[event.ID][index]
 	finished := time.Now().UTC()
 	attempt.FinishedAt = &finished

@@ -124,7 +124,7 @@ func TestQueueRecoversAfterProcessCrashIntegration(t *testing.T) {
 	if _, err := store.ClaimEvent(ctx, time.Minute); !errors.Is(err, repository.ErrNoJob) {
 		t.Fatalf("unexpired lease must remain owned after restart: %v", err)
 	}
-	// Advance only this test lease instead of waiting thirty seconds.
+	// Сдвигаем только тестовую аренду, чтобы не ждать тридцать секунд.
 	if _, err := database.Exec(ctx, `UPDATE events SET lease_until = clock_timestamp() - interval '1 second' WHERE id = 'event'`); err != nil {
 		t.Fatal(err)
 	}
