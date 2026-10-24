@@ -136,6 +136,22 @@ func TestRunPostgresIntegration(t *testing.T) {
 	defer failing.Close()
 
 	base, stop := start()
+	// Страница и API должны работать на одном сервере, не подменяя маршруты друг друга.
+	for path, expected := range map[string]string{
+		"/":               "Доставка событий",
+		"/assets/app.js":  "/api/v1/events",
+		"/assets/app.css": ".container",
+	} {
+		response, err := client.Get(base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(response.Body)
+		response.Body.Close()
+		if err != nil || response.StatusCode != http.StatusOK || !strings.Contains(string(body), expected) {
+			t.Fatalf("dashboard %s: status=%d error=%v", path, response.StatusCode, err)
+		}
+	}
 	var savedEndpoint domain.Endpoint
 	var savedEvents []domain.Event
 	for _, tc := range []struct {

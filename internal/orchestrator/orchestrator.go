@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"hookrelay/internal/dashboard"
 	"hookrelay/internal/delivery"
 	"hookrelay/internal/httpapi"
 	"hookrelay/internal/postgres"
@@ -42,6 +43,7 @@ func Run(stopCtx context.Context) error {
 	mux := http.NewServeMux()
 	handler := httpapi.NewHandler(store)
 	handler.RegisterRoutes(mux)
+	dashboard.RegisterRoutes(mux)
 	port := httpPort()
 
 	srv := &http.Server{
