@@ -112,8 +112,13 @@ func TestRunPostgresIntegration(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer receiver.Close()
+	var acceptRetry atomic.Bool
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
+		if acceptRetry.Load() {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
 	}))
 	defer failing.Close()
 
@@ -177,4 +182,27 @@ func TestRunPostgresIntegration(t *testing.T) {
 	if deliveries.Load() != 1 {
 		t.Fatalf("successful deliveries=%d, want 1", deliveries.Load())
 	}
+	acceptRetry.Store(true)
+	failed := savedEvents[len(savedEvents)-1]
+	exchange(base, http.MethodPost, "/api/v1/events/"+failed.ID+"/retry", "", http.StatusAccepted)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		data := exchange(base, http.MethodGet, "/api/v1/events/"+failed.ID, "", http.StatusOK)
+		if err := json.Unmarshal(data, &failed); err != nil {
+			t.Fatal(err)
+		}
+		if failed.Status == domain.DeliveryStatusDelivered {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if failed.Status != domain.DeliveryStatusDelivered {
+		t.Fatal("manual retry was not delivered")
+	}
+	data := exchange(base, http.MethodGet, "/api/v1/events/"+failed.ID+"/attempts", "", http.StatusOK)
+	var attempts []domain.DeliveryAttempt
+	if err := json.Unmarshal(data, &attempts); err != nil || len(attempts) != 2 || attempts[0].HTTPStatus == nil || *attempts[0].HTTPStatus != 400 || attempts[1].HTTPStatus == nil || *attempts[1].HTTPStatus != 204 {
+		t.Fatalf("manual retry HTTP history: %s, %v", data, err)
+	}
+	exchange(base, http.MethodPost, "/api/v1/events/"+failed.ID+"/retry", "", http.StatusConflict)
 }

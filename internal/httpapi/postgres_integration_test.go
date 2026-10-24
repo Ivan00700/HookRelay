@@ -57,6 +57,8 @@ func TestPostgresAPIErrorsIntegration(t *testing.T) {
 		{http.MethodGet, "/api/v1/endpoints/" + endpoint.ID, ""},
 		{http.MethodGet, "/api/v1/events", ""},
 		{http.MethodGet, "/api/v1/events/missing", ""},
+		{http.MethodGet, "/api/v1/events/missing/attempts", ""},
+		{http.MethodPost, "/api/v1/events/missing/retry", ""},
 		{http.MethodPost, "/api/v1/endpoints", `{"name":"orders","url":"http://example.test","secret":"private"}`},
 		{http.MethodPost, "/api/v1/events", body},
 		{http.MethodDelete, "/api/v1/endpoints/" + endpoint.ID, ""},

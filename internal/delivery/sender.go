@@ -3,6 +3,7 @@ package delivery
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -11,6 +12,8 @@ import (
 )
 
 const requestTimeout = 3 * time.Second
+
+var ErrInvalidRequest = errors.New("invalid delivery request")
 
 type Sender struct {
 	client *http.Client
@@ -29,7 +32,7 @@ func NewSender(client *http.Client) *Sender {
 	return &Sender{client: &configuredClient}
 }
 
-func (s *Sender) Send(ctx context.Context, event domain.Event, endpoint domain.Endpoint) error {
+func (s *Sender) Send(ctx context.Context, event domain.Event, endpoint domain.Endpoint) (int, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
@@ -40,19 +43,19 @@ func (s *Sender) Send(ctx context.Context, event domain.Event, endpoint domain.E
 		bytes.NewReader(event.Payload),
 	)
 	if err != nil {
-		return fmt.Errorf("create delivery request: %w", err)
+		return 0, fmt.Errorf("create delivery request: %w: %v", ErrInvalidRequest, err)
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-HookRelay-Event-ID", event.ID)
 
 	response, err := s.client.Do(request)
 	if err != nil {
-		return fmt.Errorf("send delivery request: %w", err)
+		return 0, fmt.Errorf("send delivery request: %w", err)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("delivery returned HTTP %d", response.StatusCode)
+		return response.StatusCode, fmt.Errorf("delivery returned HTTP %d", response.StatusCode)
 	}
-	return nil
+	return response.StatusCode, nil
 }

@@ -137,6 +137,10 @@ func TestQueueRecoversAfterProcessCrashIntegration(t *testing.T) {
 	if requests.Load() != 2 {
 		t.Fatalf("requests=%d, want interrupted request and recovered request", requests.Load())
 	}
+	attempts, err := store.ListAttempts(ctx, "event")
+	if err != nil || len(attempts) != 2 || attempts[0].FinishedAt == nil || attempts[0].HTTPStatus != nil || attempts[0].ErrorMessage == "" || attempts[1].HTTPStatus == nil || *attempts[1].HTTPStatus != 204 {
+		t.Fatalf("history after process crash: %+v, %v", attempts, err)
+	}
 }
 
 func TestQueueCrashHelper(t *testing.T) {

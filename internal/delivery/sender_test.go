@@ -45,8 +45,8 @@ func TestSenderSendsPayload(t *testing.T) {
 	defer server.Close()
 
 	sender := NewSender(server.Client())
-	if err := sender.Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL}); err != nil {
-		t.Fatalf("send: %v", err)
+	if status, err := sender.Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL}); err != nil || status != http.StatusNoContent {
+		t.Fatalf("send: status=%d, error=%v", status, err)
 	}
 }
 
@@ -56,8 +56,8 @@ func TestSenderRejectsHTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL})
-	if err == nil || !strings.Contains(err.Error(), "500") {
+	status, err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL})
+	if err == nil || status != 500 || !strings.Contains(err.Error(), "500") {
 		t.Fatalf("error = %v, want HTTP 500 error", err)
 	}
 }
@@ -74,7 +74,7 @@ func TestSenderDoesNotFollowRedirect(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL})
+	_, err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL})
 	if err == nil || !strings.Contains(err.Error(), "307") {
 		t.Fatalf("error = %v, want HTTP 307 error", err)
 	}
@@ -92,7 +92,7 @@ func TestSenderRespectsContextDeadline(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	err := NewSender(server.Client()).Send(ctx, testEvent(), domain.Endpoint{URL: server.URL})
+	_, err := NewSender(server.Client()).Send(ctx, testEvent(), domain.Endpoint{URL: server.URL})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want context deadline exceeded", err)
 	}
@@ -104,13 +104,13 @@ func TestSenderReturnsNetworkError(t *testing.T) {
 	endpoint := domain.Endpoint{URL: server.URL}
 	server.Close()
 
-	if err := sender.Send(context.Background(), testEvent(), endpoint); err == nil {
+	if status, err := sender.Send(context.Background(), testEvent(), endpoint); err == nil || status != 0 {
 		t.Fatal("send to closed server succeeded")
 	}
 }
 
 func TestSenderRejectsMalformedURL(t *testing.T) {
-	err := NewSender(nil).Send(context.Background(), testEvent(), domain.Endpoint{URL: "://invalid"})
+	_, err := NewSender(nil).Send(context.Background(), testEvent(), domain.Endpoint{URL: "://invalid"})
 	if err == nil || !strings.Contains(err.Error(), "create delivery request") {
 		t.Fatalf("error = %v, want request creation error", err)
 	}

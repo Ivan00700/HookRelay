@@ -14,8 +14,11 @@ import (
 
 type senderFunc func(context.Context, domain.Event, domain.Endpoint) error
 
-func (f senderFunc) Send(ctx context.Context, event domain.Event, endpoint domain.Endpoint) error {
-	return f(ctx, event, endpoint)
+func (f senderFunc) Send(ctx context.Context, event domain.Event, endpoint domain.Endpoint) (int, error) {
+	if err := f(ctx, event, endpoint); err != nil {
+		return 400, err
+	}
+	return 204, nil
 }
 
 func poolStore(t *testing.T, ids ...string) *repository.MemoryStore {

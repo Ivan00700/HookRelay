@@ -14,13 +14,15 @@ var (
 )
 
 type DeliveryJob struct {
-	Event        domain.Event
-	LeaseVersion int64
-	LeaseUntil   time.Time
+	Event         domain.Event
+	LeaseVersion  int64
+	LeaseUntil    time.Time
+	AttemptNumber int
+	CycleAttempt  int
 }
 
 type DeliveryStore interface {
 	ClaimEvent(context.Context, time.Duration) (DeliveryJob, error)
-	FinishEvent(context.Context, DeliveryJob, domain.DeliveryStatus) error
+	FinishEvent(context.Context, DeliveryJob, domain.DeliveryResult) error
 	GetEndpoint(context.Context, string) (domain.Endpoint, error)
 }

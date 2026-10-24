@@ -18,7 +18,7 @@ const (
 )
 
 type EventSender interface {
-	Send(context.Context, domain.Event, domain.Endpoint) error
+	Send(context.Context, domain.Event, domain.Endpoint) (int, error)
 }
 
 type Pool struct {
@@ -81,14 +81,15 @@ func (p *Pool) deliver(job repository.DeliveryJob) {
 		log.Printf("get endpoint for event %s: %v", job.Event.ID, err)
 		return
 	}
-	status := domain.DeliveryStatusDelivered
-	if err := p.sender.Send(ctx, job.Event, endpoint); err != nil {
+	status, err := p.sender.Send(ctx, job.Event, endpoint)
+	result := domain.DeliveryResult{HTTPStatus: status, Retryable: shouldRetry(status, err)}
+	if err != nil {
 		log.Printf("delivery of event %s failed: %v", job.Event.ID, err)
-		status = domain.DeliveryStatusFailed
+		result.ErrorMessage = err.Error()
 	}
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
-	if err := p.store.FinishEvent(finishCtx, job, status); err != nil {
+	if err := p.store.FinishEvent(finishCtx, job, result); err != nil {
 		log.Printf("finish delivery of event %s: %v", job.Event.ID, err)
 	}
 }

@@ -14,6 +14,43 @@ func RegisterEvents(mux *http.ServeMux, store repository.Store) {
 	mux.HandleFunc("POST /api/v1/events", withStorageTimeout(handleCreateEvent(store)))
 	mux.HandleFunc("GET /api/v1/events", withStorageTimeout(handleListEvents(store)))
 	mux.HandleFunc("GET /api/v1/events/{id}", withStorageTimeout(handleGetEvent(store)))
+	mux.HandleFunc("GET /api/v1/events/{id}/attempts", withStorageTimeout(handleListAttempts(store)))
+	mux.HandleFunc("POST /api/v1/events/{id}/retry", withStorageTimeout(handleRetryEvent(store)))
+}
+
+func handleListAttempts(store repository.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		attempts, err := store.ListAttempts(r.Context(), r.PathValue("id"))
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				writeError(w, http.StatusNotFound, "not_found", "event not found", "")
+			} else {
+				log.Printf("list delivery attempts: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
+			}
+			return
+		}
+		writeJSON(w, http.StatusOK, attempts)
+	}
+}
+
+func handleRetryEvent(store repository.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		event, err := store.RetryEvent(r.Context(), r.PathValue("id"))
+		if err != nil {
+			switch {
+			case errors.Is(err, repository.ErrNotFound):
+				writeError(w, http.StatusNotFound, "not_found", "event not found", "")
+			case errors.Is(err, repository.ErrConflict):
+				writeError(w, http.StatusConflict, "conflict", "only failed events can be retried", "")
+			default:
+				log.Printf("retry event: %v", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
+			}
+			return
+		}
+		writeJSON(w, http.StatusAccepted, event)
+	}
 }
 
 func handleCreateEvent(store repository.Store) http.HandlerFunc {
