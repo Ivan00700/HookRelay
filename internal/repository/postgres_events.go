@@ -54,7 +54,7 @@ func (s *PostgresStore) DeleteEvent(ctx context.Context, id string) error {
 }
 
 func (s *PostgresStore) UpdateEventStatus(ctx context.Context, id string, status domain.DeliveryStatus) error {
-	// Проверка и смена статуса должны выполняться под одной блокировкой строки.
+	// проверка и смена статуса должны выполняться под одной блокировкой строки
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return databaseError("begin status update", err, ErrConflict)

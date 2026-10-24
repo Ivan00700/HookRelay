@@ -162,13 +162,13 @@ func TestMemoryStoreCopiesEventPayload(t *testing.T) {
 	}
 	want := []byte(`{"value":1}`)
 
-	payload[9] = '9' // Изменяем исходный срез после сохранения.
+	payload[9] = '9' // изменяем исходный срез после сохранения
 	first, err := s.GetEvent(context.Background(), "ev-1")
 	if err != nil || !bytes.Equal(first.Payload, want) {
 		t.Fatalf("saved payload = %s, want %s", first.Payload, want)
 	}
 
-	first.Payload[9] = '8' // Изменяем результат GetEvent.
+	first.Payload[9] = '8' // изменяем результат GetEvent
 	list, err := s.ListEvents(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestMemoryStoreCopiesEventPayload(t *testing.T) {
 	if !bytes.Equal(list[0].Payload, want) {
 		t.Fatalf("listed payload = %s, want %s", list[0].Payload, want)
 	}
-	list[0].Payload[9] = '7' // Изменяем результат ListEvents.
+	list[0].Payload[9] = '7' // изменяем результат ListEvents
 	last, _ := s.GetEvent(context.Background(), "ev-1")
 	if !bytes.Equal(last.Payload, want) {
 		t.Fatalf("stored payload changed to %s", last.Payload)

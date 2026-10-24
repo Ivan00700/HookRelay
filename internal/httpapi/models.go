@@ -1,6 +1,6 @@
 package httpapi
 
-// Внутренняя ошибка чтения запроса и формат ошибки HTTP API.
+// внутренняя ошибка чтения запроса и формат ошибки HTTP API
 type apiError struct {
 	status  int
 	code    string

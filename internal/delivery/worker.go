@@ -3,17 +3,17 @@ package delivery
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"hookrelay/internal/domain"
+	"hookrelay/internal/observability"
 	"hookrelay/internal/repository"
 )
 
 func (p *Pool) worker() {
 	defer p.wg.Done()
 	for p.ctx.Err() == nil {
-		// 1) Забираем готовое задание с ограничением времени обращения к БД.
+		// забираем готовое задание с ограничением времени обращения к БД
 		ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
 		job, err := p.store.ClaimEvent(ctx, leaseDuration)
 		cancel()
@@ -25,9 +25,9 @@ func (p *Pool) worker() {
 			return
 		}
 		if !errors.Is(err, repository.ErrNoJob) {
-			log.Printf("claim delivery: %v", err)
+			p.monitor.Logger().Error("delivery claim failed", "error_kind", observability.ErrorKind(err))
 		}
-		// 2) Пустую очередь опрашиваем с паузой, которую прерывает остановка.
+		// ждём перед следующим опросом пустой очереди - остановка прерывает паузу
 		timer := time.NewTimer(pollInterval)
 		select {
 		case <-p.ctx.Done():
@@ -38,29 +38,49 @@ func (p *Pool) worker() {
 }
 
 func (p *Pool) deliver(job repository.DeliveryJob) {
-	// Начатую доставку завершаем даже после остановки захвата новых заданий.
+	logger := p.monitor.Logger().With("event_id", job.Event.ID, "attempt_number", job.AttemptNumber, "cycle_attempt", job.CycleAttempt)
+	logger.Info("delivery started")
+	// начатую доставку завершаем даже после остановки захвата новых заданий
 	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
 	defer cancel()
 
-	// 1) Получаем адрес и секрет получателя.
+	// получаем адрес и секрет получателя
 	endpoint, err := p.store.GetEndpoint(ctx, job.Event.EndpointID)
 	if err != nil {
-		log.Printf("get endpoint for event %s: %v", job.Event.ID, err)
+		logger.Error("delivery endpoint lookup failed", "error_kind", observability.ErrorKind(err))
 		return
 	}
 
-	// 2) Отправляем событие и определяем, допустим ли повтор.
+	// отправляем событие и определяем возможность повтора
 	status, err := p.sender.Send(ctx, job.Event, endpoint)
 	result := domain.DeliveryResult{HTTPStatus: status, Retryable: shouldRetry(status, err)}
 	if err != nil {
-		log.Printf("delivery of event %s failed: %v", job.Event.ID, err)
 		result.ErrorMessage = err.Error()
 	}
 
-	// 3) Записываем попытку и состояние события одной операцией хранилища.
+	// записываем попытку и состояние события одной операцией хранилища
 	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer finishCancel()
 	if err := p.store.FinishEvent(finishCtx, job, result); err != nil {
-		log.Printf("finish delivery of event %s: %v", job.Event.ID, err)
+		kind := observability.ErrorKind(err)
+		if errors.Is(err, repository.ErrLeaseLost) {
+			kind = "lease_lost"
+		}
+		logger.Error("delivery result save failed", "error_kind", kind)
+		return
 	}
+	p.monitor.Delivery(result, job.CycleAttempt)
+	statusAfter, delay := result.NextStatus(job.CycleAttempt)
+	if result.ErrorMessage != "" {
+		kind := "http_response"
+		if status == 0 {
+			kind = observability.ErrorKind(err)
+			if errors.Is(err, ErrInvalidRequest) {
+				kind = "invalid_request"
+			}
+		}
+		logger.Warn("delivery attempt failed", "http_status", status, "retryable", result.Retryable, "status", statusAfter, "retry_delay_seconds", delay.Seconds(), "error_kind", kind)
+		return
+	}
+	logger.Info("delivery completed", "http_status", status, "status", statusAfter)
 }

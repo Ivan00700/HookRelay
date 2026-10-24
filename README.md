@@ -15,6 +15,7 @@ HookRelay — сервис асинхронной доставки webhook-со�
 - История попыток с временем, HTTP-кодом и ошибкой; ручная повторная доставка неуспешного события.
 - HMAC-SHA256 подпись тела каждого webhook секретом endpoint и пример получателя с проверкой подписи.
 - Веб-панель: endpoints, отправка событий, статусы, история попыток и ручной повтор.
+- JSON-логи с request ID, проверки `/health` и `/ready`, метрики Prometheus на `/metrics`.
 - Статусы `pending`, `processing`, `delivered` и `failed` с проверкой допустимых переходов.
 - Единый JSON-формат ошибок и штатное завершение HTTP-сервера и worker pool.
 
@@ -100,6 +101,20 @@ HTML, CSS и JavaScript встроены в Go-бинарник. Панель и
 
 Настройка, применение SQL-файлов, подключение DBeaver и запуск проверки описаны в [документации PostgreSQL](docs/postgres.md).
 
+## Логи и метрики
+
+Приложение пишет JSON-логи в stderr. Ответы содержат `X-Request-ID`, который связывает HTTP-запрос с логами; фоновая доставка связывается с приёмом по ID события.
+
+GET `/health` проверяет работу HTTP, GET `/ready` — соединение с PostgreSQL и поля очереди. При недоступности хранилища `/ready` отвечает `503`. GET `/metrics` отдаёт счётчики приёма и доставки, количество запросов, гистограмму их длительности и состояние очереди.
+
+```powershell
+curl.exe -i http://localhost:8080/ready
+curl.exe http://localhost:8080/metrics
+docker compose --profile monitoring up -d --wait prometheus
+```
+
+Prometheus доступен на `http://localhost:9090/` и собирает метрики приложения с порта `8080`. Для другого HTTP_PORT измените target в `deploy/prometheus.yaml`. Подробные значения метрик, PromQL и ограничения описаны в [документации наблюдаемости](docs/observability.md).
+
 ## Пример работы с API
 
 Примеры ниже рассчитаны на Windows PowerShell или PowerShell 7. Сначала создайте endpoint:
@@ -183,6 +198,8 @@ curl -i -X POST http://localhost:8080/api/v1/events \
 | Метод | Путь | Успешный ответ |
 | --- | --- | --- |
 | `GET` | `/health` | `200`, `{"status":"ok"}` |
+| `GET` | `/ready` | `200`, `{"status":"ready"}`; при ошибке БД `503` |
+| `GET` | `/metrics` | `200`, метрики Prometheus |
 | `POST` | `/api/v1/endpoints` | `201`, созданный endpoint |
 | `GET` | `/api/v1/endpoints` | `200`, массив endpoints |
 | `GET` | `/api/v1/endpoints/{id}` | `200`, endpoint |
@@ -249,6 +266,7 @@ ServeMux → HTTP-обработчик → валидация → PostgreSQL: pe
 - `internal/domain` содержит модели в `models.go`, входную валидацию, переходы статусов и интервалы повторов.
 - `internal/httpapi` хранит зависимость от репозитория в `Handler`, регистрирует маршруты и формирует JSON-ответы. Обработчики endpoints и событий разделены по файлам; общие функции находятся в `helpers.go`.
 - `internal/dashboard` отдаёт страницу `/` и файлы `/assets/app.css`, `/assets/app.js`. Скрипт панели обращается к существующим маршрутам API.
+- `internal/observability` содержит JSON-логгер, request ID, измерение HTTP и registry метрик. Состояние очереди читается из PostgreSQL при сборе метрик.
 - `internal/repository` определяет CRUD-интерфейс `Store` и интерфейс очереди `DeliveryStore`. Захват задания и начало записи истории выполняются одной короткой транзакцией. Другая транзакция сохраняет результат попытки и статус события с проверкой версии и срока аренды. `MemoryStore` используется в быстрых тестах.
 - `internal/delivery` управляет пулом в `pool.go`, выполняет цикл воркера в `worker.go` и исходящий запрос в `sender.go`. При пустой очереди или ошибке захвата воркер опрашивает PostgreSQL каждые 250 мс. Перед отправкой тело подписывается секретом endpoint; транзакция захвата к этому моменту уже закрыта.
 - `internal/signature` вычисляет и проверяет HMAC-SHA256 над байтами тела.

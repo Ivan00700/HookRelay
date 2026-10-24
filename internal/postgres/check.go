@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-// Check проверяет соединение и выводит сведения о PostgreSQL.
+// проверяет соединение и выводит сведения о PostgreSQL
 func Check(ctx context.Context, databaseURL string, output io.Writer) error {
 	pool, err := Open(ctx, databaseURL)
 	if err != nil {

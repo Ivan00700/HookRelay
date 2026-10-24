@@ -68,7 +68,7 @@ func TestPoolDeliversSavedEvents(t *testing.T) {
 		}
 		return nil
 	})
-	pool, err := NewPool(store, sender, 2)
+	pool, err := NewPool(store, sender, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestPoolWorkerLimit(t *testing.T) {
 		active.Add(-1)
 		return nil
 	})
-	pool, err := NewPool(store, sender, 2)
+	pool, err := NewPool(store, sender, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestCloseFinishesActiveJobAndLeavesPending(t *testing.T) {
 		started <- struct{}{}
 		<-release
 		return nil
-	}), 1)
+	}), 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,14 +157,14 @@ func TestNewPoolRejectsInvalidConfiguration(t *testing.T) {
 	store := poolStore(t)
 	sender := senderFunc(func(context.Context, domain.Event, domain.Endpoint) error { return nil })
 	for _, workers := range []int{0, -1} {
-		if _, err := NewPool(store, sender, workers); err == nil {
+		if _, err := NewPool(store, sender, workers, nil); err == nil {
 			t.Fatal("invalid worker count accepted")
 		}
 	}
-	if _, err := NewPool(nil, sender, 1); err == nil {
+	if _, err := NewPool(nil, sender, 1, nil); err == nil {
 		t.Fatal("nil store accepted")
 	}
-	if _, err := NewPool(store, nil, 1); err == nil {
+	if _, err := NewPool(store, nil, 1, nil); err == nil {
 		t.Fatal("nil sender accepted")
 	}
 }
@@ -184,7 +184,7 @@ func (s *temporaryClaimError) ClaimEvent(ctx context.Context, lease time.Duratio
 func TestPoolContinuesAfterClaimError(t *testing.T) {
 	store := poolStore(t, "event")
 	queue := &temporaryClaimError{DeliveryStore: store}
-	pool, err := NewPool(queue, senderFunc(func(context.Context, domain.Event, domain.Endpoint) error { return nil }), 1)
+	pool, err := NewPool(queue, senderFunc(func(context.Context, domain.Event, domain.Endpoint) error { return nil }), 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

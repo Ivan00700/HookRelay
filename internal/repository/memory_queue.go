@@ -21,7 +21,7 @@ func (s *MemoryStore) ClaimEvent(ctx context.Context, lease time.Duration) (Deli
 		return DeliveryJob{}, err
 	}
 
-	// 1) Выбираем самое старое готовое событие под общей блокировкой.
+	// выбираем самое старое готовое событие под общей блокировкой
 	now := time.Now().UTC()
 	var selected domain.Event
 	found := false
@@ -41,7 +41,7 @@ func (s *MemoryStore) ClaimEvent(ctx context.Context, lease time.Duration) (Deli
 		return DeliveryJob{}, ErrNoJob
 	}
 
-	// 2) Закрываем прерванную попытку и ограничиваем число захватов.
+	// закрываем прерванную попытку и ограничиваем число захватов
 	for i := range s.attempts[selected.ID] {
 		attempt := &s.attempts[selected.ID][i]
 		if attempt.FinishedAt == nil {
@@ -57,7 +57,7 @@ func (s *MemoryStore) ClaimEvent(ctx context.Context, lease time.Duration) (Deli
 		return DeliveryJob{}, ErrNoJob
 	}
 
-	// 3) Сохраняем аренду и начало новой попытки.
+	// сохраняем аренду и начало новой попытки
 	selected.Status = domain.DeliveryStatusProcessing
 	s.events[selected.ID] = selected
 	s.versions[selected.ID]++
@@ -91,7 +91,7 @@ func (s *MemoryStore) FinishEvent(ctx context.Context, job DeliveryJob, result d
 		return ErrInvalidTransition
 	}
 
-	// 1) Проверяем аренду и наличие незавершённой попытки.
+	// проверяем аренду и наличие незавершённой попытки
 	event, ok := s.events[job.Event.ID]
 	if !ok || event.Status != domain.DeliveryStatusProcessing ||
 		s.versions[event.ID] != job.LeaseVersion || !s.leases[event.ID].After(time.Now()) {
@@ -102,7 +102,7 @@ func (s *MemoryStore) FinishEvent(ctx context.Context, job DeliveryJob, result d
 		return ErrLeaseLost
 	}
 
-	// 2) Обновляем историю и событие, не отпуская блокировку.
+	// обновляем историю и событие под одной блокировкой
 	attempt := &s.attempts[event.ID][index]
 	finished := time.Now().UTC()
 	attempt.FinishedAt = &finished

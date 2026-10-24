@@ -1,11 +1,12 @@
 package httpapi
 
 import (
-	"log"
 	"net/http"
+
+	"hookrelay/internal/observability"
 )
 
-// Проверка здоровья не обращается к БД и сохраняет прежний формат ответа.
+// проверка здоровья не обращается к БД и сохраняет прежний формат ответа
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
@@ -17,6 +18,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
-		log.Printf("write health response: %v", err)
+		observability.Logger(r.Context()).Error("write health response", "error_kind", observability.ErrorKind(err))
 	}
 }

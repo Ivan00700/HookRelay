@@ -24,7 +24,7 @@ function element(id) {
   return document.getElementById(id);
 }
 
-// Все запросы идут в API того же сервера; секреты не сохраняются в браузерном хранилище.
+// все запросы идут в API того же сервера - секреты не сохраняются в браузерном хранилище
 async function request(path, method = "GET", body) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10000);
@@ -71,7 +71,7 @@ function formatTime(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ru-RU");
 }
 
-// Данные API вставляются только как текст, чтобы имя или payload не стали HTML.
+// вставляем данные API как текст - имя и payload не должны становиться HTML
 function cell(row, text, className = "") {
   const td = document.createElement("td");
   td.textContent = text;
@@ -200,6 +200,7 @@ function renderDetails(event, attempts) {
 async function loadDetails() {
   const id = state.selectedEventID;
   if (!id) return;
+  // номер запроса защищает выбранное событие от запоздавшего ответа
   const currentRequest = ++detailsRequest;
   try {
     const path = `/api/v1/events/${encodeURIComponent(id)}`;
@@ -233,7 +234,7 @@ function openDetails(id) {
   return loadDetails();
 }
 
-// Снимки позволяют не пересоздавать таблицы при каждом опросе без изменений.
+// снимки позволяют не пересоздавать таблицы при каждом опросе без изменений
 async function loadData() {
   element("refresh").disabled = true;
   try {
@@ -262,7 +263,7 @@ async function loadData() {
 }
 
 async function refreshData(afterChange = false) {
-  // После записи ждём старый опрос и запрашиваем уже обновлённое состояние.
+  // после записи ждём старый опрос и запрашиваем уже обновлённое состояние
   if (afterChange === true && refreshPromise) await refreshPromise;
   if (!refreshPromise) {
     refreshPromise = loadData().finally(() => { refreshPromise = null; });
@@ -280,6 +281,7 @@ async function createEndpoint(event) {
       url: element("endpoint-url").value,
       secret: element("endpoint-secret").value,
     });
+    // очищаем секрет после успешного создания endpoint
     element("endpoint-form").reset();
     showMessage("endpoint-message", "Endpoint создан. Теперь можно отправить событие.");
     await refreshData(true);
@@ -310,6 +312,7 @@ async function createEvent(event) {
   updateEventForm();
   showMessage("event-message", "Сохранение события…");
   try {
+    // подтверждение создания означает очередь - результат доставки узнаём из списка
     const result = await request("/api/v1/events", "POST", input);
     showMessage("event-message", `Событие ${result.id} принято. Статус доставки — в таблице ниже.`);
     await refreshData(true);
@@ -322,6 +325,7 @@ async function createEvent(event) {
 }
 
 async function retryEvent(id, button) {
+  // повтор начинает новый цикл - прежняя история остаётся на сервере
   button.disabled = true;
   showMessage("action-message", "Повторная постановка события в очередь…");
   try {
@@ -346,6 +350,7 @@ element("close-details").addEventListener("click", () => {
   element("event-details").hidden = true;
   renderEvents();
 });
+// скрытую вкладку не опрашиваем - ручное обновление остаётся доступным
 setInterval(() => {
   if (element("auto-refresh").checked && !document.hidden) refreshData();
 }, 3000);

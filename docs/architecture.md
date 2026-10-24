@@ -15,6 +15,11 @@ internal/
   dashboard/
     handler.go                   встраивание и раздача файлов интерфейса
     assets/                      HTML, CSS и JavaScript панели
+  observability/
+    logger.go                    JSON-логи и контекст запроса
+    http.go                      request ID и измерение HTTP-запросов
+    metrics.go                   registry и счётчики
+    queue.go                     чтение состояния БД при сборе метрик
   domain/
     models.go                    endpoints, события, попытки и входные структуры
     validation.go                обязательные поля, URL, JSON и статусы
@@ -35,6 +40,7 @@ internal/
     postgres_events.go           SQL для событий и смены статуса
     postgres_queue.go            захват задания и сохранение результата
     postgres_attempts.go         история и ручной повтор
+    postgres_counts.go           проверка готовности и количество событий
     helpers.go                   чтение строк, преобразование ошибок и откат
     memory*.go                   хранилище в памяти для быстрых тестов
   delivery/
@@ -53,6 +59,7 @@ examples/receiver/
   main.go                        конфигурация проверяющего получателя
   handler.go                     проверка подписи и приём webhook
 migrations/                      пять SQL-файлов структуры БД
+deploy/prometheus.yaml           настройка сбора метрик
 ```
 
 ## Запуск
@@ -86,3 +93,5 @@ HTTP-обработчики обращаются к Store через интер�
 Формат подписи и границы её защиты описаны в [документации webhook](webhook-signatures.md). API и примеры запросов находятся в [README](../README.md).
 
 Панель работает поверх REST API через Fetch. В браузер не передаются SQL-подключение и секреты сохранённых endpoints. Её устройство и сценарии использования описаны в [документации панели](dashboard.md).
+
+HTTP-сервер обёрнут в middleware наблюдаемости: request ID и логгер передаются через context, после обработки записываются статус и длительность. API и pool получают один Monitor процесса. Счётчики обновляются после сохранения события или результата попытки. Gauge очереди и статусов читаются из PostgreSQL при scrape. Registry создаётся отдельно для каждого запуска сервиса. Формат и ограничения описаны в [наблюдаемости](observability.md).

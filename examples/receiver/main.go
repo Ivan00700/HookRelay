@@ -1,17 +1,22 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"hookrelay/internal/observability"
 )
 
 func main() {
+	logger := observability.NewLogger(os.Stderr)
+	slog.SetDefault(logger)
 	secret := os.Getenv("WEBHOOK_SECRET")
 	if strings.TrimSpace(secret) == "" {
-		log.Fatal("set WEBHOOK_SECRET to the secret of the sender endpoint")
+		logger.Error("example receiver requires WEBHOOK_SECRET")
+		os.Exit(1)
 	}
 	server := &http.Server{
 		Addr:              "127.0.0.1:9000",
@@ -20,6 +25,9 @@ func main() {
 		ReadTimeout:       5 * time.Second,
 		WriteTimeout:      5 * time.Second,
 	}
-	log.Print("example receiver listening on http://127.0.0.1:9000/webhook")
-	log.Fatal(server.ListenAndServe())
+	logger.Info("example receiver starting", "address", "127.0.0.1:9000")
+	if err := server.ListenAndServe(); err != nil {
+		logger.Error("example receiver stopped", "error_kind", observability.ErrorKind(err))
+		os.Exit(1)
+	}
 }

@@ -50,6 +50,7 @@ func (in CreateEventInput) Validate() error {
 		return &ValidationError{Field: "payload", Message: "must be valid JSON"}
 	}
 
+	// валидный JSON может быть массивом или скаляром - для события нужен объект
 	if bytes.TrimSpace(in.Payload)[0] != '{' {
 		return &ValidationError{Field: "payload", Message: "must be a JSON object"}
 	}

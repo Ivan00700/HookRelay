@@ -13,7 +13,7 @@ var (
 	ErrInvalidTransition = errors.New("invalid status transition")
 )
 
-// Store описывает операции с записями независимо от способа хранения.
+// операции с записями независимо от способа хранения
 type Store interface {
 	CreateEndpoint(ctx context.Context, endpoint domain.Endpoint) error
 	GetEndpoint(ctx context.Context, id string) (domain.Endpoint, error)
@@ -28,4 +28,6 @@ type Store interface {
 
 	ListAttempts(ctx context.Context, eventID string) ([]domain.DeliveryAttempt, error)
 	RetryEvent(ctx context.Context, id string) (domain.Event, error)
+	CheckReady(ctx context.Context) error
+	EventCounts(ctx context.Context) (map[domain.DeliveryStatus]int64, error)
 }

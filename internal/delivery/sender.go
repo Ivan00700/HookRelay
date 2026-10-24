@@ -17,7 +17,7 @@ const requestTimeout = 3 * time.Second
 
 var ErrInvalidRequest = errors.New("invalid delivery request")
 
-// Sender выполняет одну HTTP-отправку с подписью и таймаутом.
+// выполняет одну HTTP-отправку с подписью и таймаутом
 type Sender struct {
 	client *http.Client
 }
@@ -27,7 +27,7 @@ func NewSender(client *http.Client) *Sender {
 		client = http.DefaultClient
 	}
 
-	// Редирект считаем ответом получателя и не пересылаем тело на другой адрес.
+	// редирект считаем ответом получателя и не пересылаем тело на другой адрес
 	httpClient := *client
 	httpClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -39,7 +39,7 @@ func (s *Sender) Send(ctx context.Context, event domain.Event, endpoint domain.E
 	if strings.TrimSpace(endpoint.Secret) == "" {
 		return 0, fmt.Errorf("%w: endpoint secret is required", ErrInvalidRequest)
 	}
-	// 1) Готовим POST с тем же payload, который будет подписан.
+	// готовим POST и подпись для одного и того же payload
 	requestCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 
@@ -52,12 +52,12 @@ func (s *Sender) Send(ctx context.Context, event domain.Event, endpoint domain.E
 	if err != nil {
 		return 0, fmt.Errorf("create delivery request: %w: %v", ErrInvalidRequest, err)
 	}
-	// 2) Добавляем служебные заголовки, не передавая сам секрет.
+	// передаём ID и подпись - секрет остаётся у отправителя
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-HookRelay-Event-ID", event.ID)
 	req.Header.Set(signature.Header, signature.Sign(event.Payload, endpoint.Secret))
 
-	// 3) Выполняем запрос и возвращаем HTTP-код вместе с ошибкой.
+	// выполняем запрос и возвращаем HTTP-код вместе с ошибкой
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("send delivery request: %w", err)

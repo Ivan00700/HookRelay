@@ -14,7 +14,7 @@ import (
 
 func TestListEndpointsEmpty(t *testing.T) {
 	mux := http.NewServeMux()
-	NewHandler(repository.NewMemoryStore()).RegisterEndpoints(mux)
+	NewHandler(repository.NewMemoryStore(), nil).RegisterEndpoints(mux)
 
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/endpoints", nil))
@@ -38,7 +38,7 @@ func TestListEndpointsReturnsStoredEndpointWithoutSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	NewHandler(store).RegisterEndpoints(mux)
+	NewHandler(store, nil).RegisterEndpoints(mux)
 
 	response := httptest.NewRecorder()
 	mux.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/endpoints", nil))

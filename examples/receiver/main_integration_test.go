@@ -22,10 +22,10 @@ func TestSignedDeliveryIntegration(t *testing.T) {
 	receiver := httptest.NewServer(newHandler("receiver-secret"))
 	defer receiver.Close()
 	mux := http.NewServeMux()
-	httpapi.NewHandler(store).RegisterRoutes(mux)
+	httpapi.NewHandler(store, nil).RegisterRoutes(mux)
 	api := httptest.NewServer(mux)
 	defer api.Close()
-	pool, err := delivery.NewPool(store, delivery.NewSender(receiver.Client()), 2)
+	pool, err := delivery.NewPool(store, delivery.NewSender(receiver.Client()), 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

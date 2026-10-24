@@ -1,6 +1,6 @@
 package domain
 
-// CanTransition проверяет допустимый переход между статусами.
+// проверяет допустимый переход между статусами
 func CanTransition(from, to DeliveryStatus) bool {
 	switch from {
 	case DeliveryStatusPending:
