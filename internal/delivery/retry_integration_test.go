@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -11,13 +12,14 @@ import (
 
 	"hookrelay/internal/domain"
 	"hookrelay/internal/repository"
+	"hookrelay/internal/signature"
 	"hookrelay/internal/testutil"
 )
 
 func retryStore(t *testing.T, store repository.Store, receiverURL string) {
 	t.Helper()
 	ctx := context.Background()
-	if err := store.CreateEndpoint(ctx, domain.Endpoint{ID: "endpoint", URL: receiverURL, CreatedAt: time.Now().UTC()}); err != nil {
+	if err := store.CreateEndpoint(ctx, domain.Endpoint{ID: "endpoint", URL: receiverURL, Secret: "retry-secret", CreatedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.CreateEvent(ctx, domain.Event{ID: "event", EndpointID: "endpoint", Type: "test", Payload: json.RawMessage(`{}`), Status: domain.DeliveryStatusPending, CreatedAt: time.Now().UTC()}); err != nil {
@@ -35,6 +37,12 @@ func TestPoolWaitsFiveSecondsBeforeRetryIntegration(t *testing.T) {
 	requests := make(chan requestTime, 4)
 	var count atomic.Int32
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil || !signature.Verify(body, "retry-secret", r.Header.Get(signature.Header)) {
+			t.Error("automatic retry has an invalid signature")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		requests <- requestTime{at: time.Now(), id: r.Header.Get("X-HookRelay-Event-ID")}
 		if count.Add(1) == 1 {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -83,6 +91,12 @@ func TestPoolExhaustsRetriesIntegration(t *testing.T) {
 	var requests atomic.Int32
 	var healthy atomic.Bool
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil || !signature.Verify(body, "retry-secret", r.Header.Get(signature.Header)) {
+			t.Error("delivery or manual retry has an invalid signature")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		requests.Add(1)
 		if healthy.Load() {
 			w.WriteHeader(http.StatusNoContent)

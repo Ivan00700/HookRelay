@@ -18,6 +18,7 @@ import (
 
 	"hookrelay/internal/domain"
 	"hookrelay/internal/postgres"
+	"hookrelay/internal/signature"
 	"hookrelay/internal/testutil"
 )
 
@@ -105,6 +106,12 @@ func TestRunPostgresIntegration(t *testing.T) {
 	}
 	var deliveries atomic.Int32
 	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil || !signature.Verify(body, "private", r.Header.Get(signature.Header)) {
+			t.Error("signature from the stored endpoint does not match the delivered body")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		deliveries.Add(1)
 		if r.Header.Get("X-HookRelay-Event-ID") == "" {
 			t.Error("delivery event ID is missing")
@@ -114,6 +121,12 @@ func TestRunPostgresIntegration(t *testing.T) {
 	defer receiver.Close()
 	var acceptRetry atomic.Bool
 	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil || !signature.Verify(body, "private", r.Header.Get(signature.Header)) {
+			t.Error("manual retry has an invalid signature")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		if acceptRetry.Load() {
 			w.WriteHeader(http.StatusNoContent)
 			return

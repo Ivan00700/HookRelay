@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"hookrelay/internal/domain"
+	"hookrelay/internal/signature"
 )
 
 func testEvent() domain.Event {
@@ -40,12 +41,18 @@ func TestSenderSendsPayload(t *testing.T) {
 		} else if string(body) != `{"order_id":42}` {
 			t.Errorf("body = %s, want original JSON", body)
 		}
+		if !signature.Verify(body, "test-secret", r.Header.Get(signature.Header)) {
+			t.Error("signature does not match the body and endpoint secret")
+		}
+		if strings.Contains(r.Header.Get(signature.Header), "test-secret") || r.Header.Get("Authorization") != "" {
+			t.Error("sender exposed the endpoint secret")
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
 	sender := NewSender(server.Client())
-	if status, err := sender.Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL}); err != nil || status != http.StatusNoContent {
+	if status, err := sender.Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL, Secret: "test-secret"}); err != nil || status != http.StatusNoContent {
 		t.Fatalf("send: status=%d, error=%v", status, err)
 	}
 }
@@ -56,7 +63,7 @@ func TestSenderRejectsHTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	status, err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL})
+	status, err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL, Secret: "test-secret"})
 	if err == nil || status != 500 || !strings.Contains(err.Error(), "500") {
 		t.Fatalf("error = %v, want HTTP 500 error", err)
 	}
@@ -74,7 +81,7 @@ func TestSenderDoesNotFollowRedirect(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL})
+	_, err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL, Secret: "test-secret"})
 	if err == nil || !strings.Contains(err.Error(), "307") {
 		t.Fatalf("error = %v, want HTTP 307 error", err)
 	}
@@ -92,7 +99,7 @@ func TestSenderRespectsContextDeadline(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	_, err := NewSender(server.Client()).Send(ctx, testEvent(), domain.Endpoint{URL: server.URL})
+	_, err := NewSender(server.Client()).Send(ctx, testEvent(), domain.Endpoint{URL: server.URL, Secret: "test-secret"})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want context deadline exceeded", err)
 	}
@@ -101,7 +108,7 @@ func TestSenderRespectsContextDeadline(t *testing.T) {
 func TestSenderReturnsNetworkError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	sender := NewSender(server.Client())
-	endpoint := domain.Endpoint{URL: server.URL}
+	endpoint := domain.Endpoint{URL: server.URL, Secret: "test-secret"}
 	server.Close()
 
 	if status, err := sender.Send(context.Background(), testEvent(), endpoint); err == nil || status != 0 {
@@ -110,8 +117,26 @@ func TestSenderReturnsNetworkError(t *testing.T) {
 }
 
 func TestSenderRejectsMalformedURL(t *testing.T) {
-	_, err := NewSender(nil).Send(context.Background(), testEvent(), domain.Endpoint{URL: "://invalid"})
+	_, err := NewSender(nil).Send(context.Background(), testEvent(), domain.Endpoint{URL: "://invalid", Secret: "test-secret"})
 	if err == nil || !strings.Contains(err.Error(), "create delivery request") {
 		t.Fatalf("error = %v, want request creation error", err)
+	}
+}
+
+func TestSenderRejectsEmptySecret(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	for _, secret := range []string{"", " \t"} {
+		status, err := NewSender(server.Client()).Send(context.Background(), testEvent(), domain.Endpoint{URL: server.URL, Secret: secret})
+		if status != 0 || !errors.Is(err, ErrInvalidRequest) {
+			t.Fatalf("missing secret: status=%d error=%v", status, err)
+		}
+	}
+	if requests.Load() != 0 {
+		t.Fatal("sender sent a request without a secret")
 	}
 }
