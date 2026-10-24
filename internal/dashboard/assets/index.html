@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>HookRelay — доставка событий</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">К содержимому</a>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/" aria-label="HookRelay, главная"><span class="brand-icon" aria-hidden="true">↗</span> HookRelay</a>
+      <nav aria-label="Разделы страницы"><a href="#endpoints">Endpoints</a><a href="#events">События</a></nav>
+      <span class="topbar-label">Webhook delivery</span>
+    </div>
+  </header>
+  <main id="main" class="container">
+    <div class="page-heading">
+      <div><p class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ</p><h1>Доставка событий</h1><p class="muted">Получатели, отправки и история каждой попытки — в одном месте.</p></div>
+      <div class="refresh-controls">
+        <button id="refresh" class="button secondary" type="button">Обновить данные</button>
+        <label class="checkbox"><input id="auto-refresh" type="checkbox" checked> Автообновление · 3 с</label>
+        <span id="last-updated" class="muted small">Загрузка данных…</span>
+      </div>
+    </div>
+    <noscript><p class="notice error">Для работы панели включите JavaScript. REST API доступен без него.</p></noscript>
+    <p id="page-error" class="notice error" role="alert" hidden></p>
+    <section class="stats" aria-label="Сводка текущего списка">
+      <div class="stat"><span>Endpoints</span><strong id="endpoint-count">—</strong><small>Получателей</small></div>
+      <div class="stat"><span>Всего событий</span><strong id="event-count">—</strong><small>В текущем списке</small></div>
+      <div class="stat"><span>Доставлено</span><strong id="delivered-count">—</strong><small>Успешных отправок</small></div>
+      <div class="stat"><span>Ошибки</span><strong id="failed-count">—</strong><small>Событий в failed</small></div>
+    </section>
+    <div class="forms-grid">
+      <section class="card" aria-labelledby="endpoint-form-title">
+        <div class="card-heading"><span class="section-number" aria-hidden="true">01</span><div><h2 id="endpoint-form-title">Добавить endpoint</h2><p class="muted small">Укажите адрес системы, которая примет webhook.</p></div></div>
+        <form id="endpoint-form" method="post">
+          <fieldset id="endpoint-fields" disabled>
+            <label for="endpoint-name">Название</label><input id="endpoint-name" name="name" placeholder="Например, заказы" required>
+            <label for="endpoint-url">URL получателя</label><input id="endpoint-url" name="url" type="url" placeholder="http://127.0.0.1:9000/webhook" required>
+            <label for="endpoint-secret">Секрет подписи</label><input id="endpoint-secret" name="secret" type="password" autocomplete="new-password" placeholder="Общий секрет с получателем" required aria-describedby="secret-hint">
+            <p id="secret-hint" class="muted small">Используется для HMAC-подписи. В списке endpoints секрет не отображается.</p>
+            <button class="button" type="submit">Создать endpoint</button>
+          </fieldset>
+          <p id="endpoint-message" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+      <section class="card" aria-labelledby="event-form-title">
+        <div class="card-heading"><span class="section-number" aria-hidden="true">02</span><div><h2 id="event-form-title">Отправить событие</h2><p class="muted small">Событие сохранится в очереди и отправится получателю.</p></div></div>
+        <form id="event-form" method="post">
+          <fieldset id="event-fields" disabled>
+            <label for="event-endpoint">Получатель</label><select id="event-endpoint" name="endpoint_id" required><option value="">Сначала добавьте endpoint</option></select>
+            <label for="event-type">Тип события</label><input id="event-type" name="type" value="order.created" required>
+            <label for="event-payload">Payload · JSON-объект</label><textarea id="event-payload" name="payload" rows="5" spellcheck="false" required>{"order_id": 42}</textarea>
+            <button class="button" type="submit">Отправить событие</button>
+          </fieldset>
+          <p id="event-message" class="form-message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </div>
+    <section id="endpoints" class="card" aria-labelledby="endpoints-title">
+      <div class="section-heading"><div><h2 id="endpoints-title">Получатели</h2><p class="muted small">Зарегистрированные HTTP-адреса доставки.</p></div><span class="tag">Endpoints</span></div>
+      <div class="table-scroll"><table><caption class="sr-only">Список endpoints</caption><thead><tr><th scope="col">Название</th><th scope="col">URL</th><th scope="col">ID</th></tr></thead><tbody id="endpoint-rows"><tr><td colspan="3" class="empty">Загрузка получателей…</td></tr></tbody></table></div>
+    </section>
+    <section id="events" class="card" aria-labelledby="events-title">
+      <div class="section-heading"><div><h2 id="events-title">События</h2><p class="muted small">Выберите событие, чтобы увидеть тело и все попытки доставки.</p></div><span class="tag">История отправок</span></div>
+      <p id="action-message" class="form-message" role="status" aria-live="polite"></p>
+      <div class="table-scroll"><table><caption class="sr-only">Список событий</caption><thead><tr><th scope="col">Время / ID</th><th scope="col">Событие</th><th scope="col">Получатель</th><th scope="col">Статус</th><th scope="col">Действия</th></tr></thead><tbody id="event-rows"><tr><td colspan="5" class="empty">Загрузка событий…</td></tr></tbody></table></div>
+      <p class="muted small table-note">pending — ожидает отправки или повтора; processing — обрабатывается; delivered — доставлено; failed — ошибка.</p>
+    </section>
+    <section id="event-details" class="card" aria-labelledby="details-title" hidden>
+      <div class="section-heading"><div><h2 id="details-title">Детали события</h2><p id="details-id" class="mono muted small"></p></div><button id="close-details" class="button secondary" type="button">Закрыть детали</button></div>
+      <p id="details-error" class="notice error" role="alert" hidden></p>
+      <div class="details-summary"><div><span class="muted small">Тип</span><strong id="details-type">—</strong></div><div><span class="muted small">Статус</span><span id="details-status">—</span></div></div>
+      <h3>Тело события</h3><pre id="details-payload">Загрузка…</pre>
+      <h3>Попытки доставки</h3>
+      <div class="table-scroll"><table><caption class="sr-only">История попыток выбранного события</caption><thead><tr><th scope="col">№</th><th scope="col">Начало</th><th scope="col">Завершение</th><th scope="col">HTTP</th><th scope="col">Ошибка</th></tr></thead><tbody id="attempt-rows"></tbody></table></div>
+      <p class="muted small table-note">Отсутствие HTTP-кода означает, что ответ не получен или попытка ещё выполняется. После ручного повтора история сохраняется.</p>
+    </section>
+    <footer><span>HookRelay</span><span>Время отображается в часовом поясе браузера.</span></footer>
+  </main>
+</body>
+</html>
