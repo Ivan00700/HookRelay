@@ -3,7 +3,6 @@ package delivery
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -12,31 +11,30 @@ import (
 	"hookrelay/internal/repository"
 )
 
-var ErrClosed = errors.New("delivery pool is closed")
+const (
+	pollInterval  = 250 * time.Millisecond
+	leaseDuration = 30 * time.Second
+	jobTimeout    = 10 * time.Second
+)
 
 type EventSender interface {
 	Send(context.Context, domain.Event, domain.Endpoint) error
 }
 
 type Pool struct {
-	store  repository.Store
+	store  repository.DeliveryStore
 	sender EventSender
-	jobs   chan string
+	ctx    context.Context
+	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	mu     sync.Mutex
-	closed bool
 }
 
-func NewPool(store repository.Store, sender EventSender, workers, queueCapacity int) (*Pool, error) {
-	if store == nil || sender == nil || workers <= 0 || queueCapacity <= 0 {
-		return nil, errors.New("store, sender, workers and queue capacity must be set")
+func NewPool(store repository.DeliveryStore, sender EventSender, workers int) (*Pool, error) {
+	if store == nil || sender == nil || workers <= 0 {
+		return nil, errors.New("store, sender and a positive worker count are required")
 	}
-
-	pool := &Pool{
-		store:  store,
-		sender: sender,
-		jobs:   make(chan string, queueCapacity),
-	}
+	ctx, cancel := context.WithCancel(context.Background())
+	pool := &Pool{store: store, sender: sender, ctx: ctx, cancel: cancel}
 	pool.wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go pool.worker()
@@ -44,68 +42,53 @@ func NewPool(store repository.Store, sender EventSender, workers, queueCapacity 
 	return pool, nil
 }
 
-// Submit waits for space in the bounded queue. The lock also prevents a send
-// racing with Close. The HTTP server must stop accepting submissions first.
-func (p *Pool) Submit(eventID string) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
-		return ErrClosed
-	}
-	p.jobs <- eventID
-	return nil
-}
-
-// Close drains queued jobs and waits for every worker. It is safe to call twice.
+// Close stops claiming jobs and waits for deliveries already in progress.
 func (p *Pool) Close() {
-	p.mu.Lock()
-	if !p.closed {
-		p.closed = true
-		close(p.jobs)
-	}
-	p.mu.Unlock()
+	p.cancel()
 	p.wg.Wait()
 }
 
 func (p *Pool) worker() {
 	defer p.wg.Done()
-	for eventID := range p.jobs {
-		p.deliver(eventID)
+	for p.ctx.Err() == nil {
+		ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
+		job, err := p.store.ClaimEvent(ctx, leaseDuration)
+		cancel()
+		if err == nil {
+			p.deliver(job)
+			continue
+		}
+		if p.ctx.Err() != nil {
+			return
+		}
+		if !errors.Is(err, repository.ErrNoJob) {
+			log.Printf("claim delivery: %v", err)
+		}
+		timer := time.NewTimer(pollInterval)
+		select {
+		case <-p.ctx.Done():
+		case <-timer.C:
+		}
+		timer.Stop()
 	}
 }
 
-func (p *Pool) deliver(eventID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func (p *Pool) deliver(job repository.DeliveryJob) {
+	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
 	defer cancel()
-	if err := p.store.UpdateEventStatus(ctx, eventID, domain.DeliveryStatusProcessing); err != nil {
-		log.Printf("start delivery for event %s: %v", eventID, err)
-		return
-	}
-
-	event, err := p.store.GetEvent(ctx, eventID)
+	endpoint, err := p.store.GetEndpoint(ctx, job.Event.EndpointID)
 	if err != nil {
-		log.Printf("get event %s during delivery: %v", eventID, err)
+		log.Printf("get endpoint for event %s: %v", job.Event.ID, err)
 		return
 	}
-	endpoint, err := p.store.GetEndpoint(ctx, event.EndpointID)
-	if err != nil {
-		p.finish(ctx, eventID, domain.DeliveryStatusFailed, fmt.Errorf("get endpoint %s: %w", event.EndpointID, err))
-		return
+	status := domain.DeliveryStatusDelivered
+	if err := p.sender.Send(ctx, job.Event, endpoint); err != nil {
+		log.Printf("delivery of event %s failed: %v", job.Event.ID, err)
+		status = domain.DeliveryStatusFailed
 	}
-
-	err = p.sender.Send(ctx, event, endpoint)
-	if err != nil {
-		p.finish(ctx, eventID, domain.DeliveryStatusFailed, err)
-		return
-	}
-	p.finish(ctx, eventID, domain.DeliveryStatusDelivered, nil)
-}
-
-func (p *Pool) finish(ctx context.Context, eventID string, status domain.DeliveryStatus, deliveryErr error) {
-	if deliveryErr != nil {
-		log.Printf("delivery of event %s failed: %v", eventID, deliveryErr)
-	}
-	if err := p.store.UpdateEventStatus(ctx, eventID, status); err != nil {
-		log.Printf("finish delivery of event %s: %v", eventID, err)
+	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer finishCancel()
+	if err := p.store.FinishEvent(finishCtx, job, status); err != nil {
+		log.Printf("finish delivery of event %s: %v", job.Event.ID, err)
 	}
 }

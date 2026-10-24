@@ -127,9 +127,13 @@ func (s *PostgresStore) UpdateEventStatus(ctx context.Context, id string, status
 	}()
 
 	var current domain.DeliveryStatus
-	err = tx.QueryRow(ctx, `SELECT status FROM events WHERE id = $1 FOR UPDATE`, id).Scan(&current)
+	var leaseUntil *time.Time
+	err = tx.QueryRow(ctx, `SELECT status, lease_until FROM events WHERE id = $1 FOR UPDATE`, id).Scan(&current, &leaseUntil)
 	if err != nil {
 		return databaseError("read event status", err, ErrConflict)
+	}
+	if leaseUntil != nil {
+		return ErrLeaseLost
 	}
 	if !domain.CanTransition(current, status) {
 		return ErrInvalidTransition
