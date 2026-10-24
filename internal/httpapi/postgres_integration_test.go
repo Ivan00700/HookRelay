@@ -16,8 +16,7 @@ func TestPostgresAPIErrorsIntegration(t *testing.T) {
 	pool, _ := testutil.Database(t)
 	store := repository.NewPostgresStore(pool)
 	mux := http.NewServeMux()
-	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store)
+	NewHandler(store).RegisterRoutes(mux)
 	created := request(mux, http.MethodPost, "/api/v1/endpoints", `{"name":"orders","url":"http://example.test","secret":"private"}`)
 	if created.Code != http.StatusCreated || strings.Contains(created.Body.String(), "private") {
 		t.Fatalf("create endpoint: %d %s", created.Code, created.Body.String())

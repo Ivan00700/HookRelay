@@ -128,7 +128,7 @@ func TestPoolExhaustsRetriesIntegration(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		if number < domain.MaxDeliveryAttempts {
-			// Check the real schedule, then advance only this test event.
+			// Проверяем дату в БД, затем ускоряем только событие этого теста.
 			var delay float64
 			if err := database.QueryRow(ctx, `
 				SELECT EXTRACT(EPOCH FROM e.next_attempt_at - a.finished_at)

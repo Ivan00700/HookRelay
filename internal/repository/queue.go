@@ -13,16 +13,18 @@ var (
 	ErrLeaseLost = errors.New("delivery lease is no longer valid")
 )
 
+// DeliveryJob содержит событие и данные текущего владельца аренды.
 type DeliveryJob struct {
 	Event         domain.Event
-	LeaseVersion  int64
+	LeaseVersion  int64 // Увеличивается при каждом захвате задания.
 	LeaseUntil    time.Time
-	AttemptNumber int
-	CycleAttempt  int
+	AttemptNumber int // Общий номер попытки в истории.
+	CycleAttempt  int // Номер попытки после последнего ручного повтора.
 }
 
+// DeliveryStore нужен воркеру для захвата задания и сохранения результата.
 type DeliveryStore interface {
-	ClaimEvent(context.Context, time.Duration) (DeliveryJob, error)
-	FinishEvent(context.Context, DeliveryJob, domain.DeliveryResult) error
-	GetEndpoint(context.Context, string) (domain.Endpoint, error)
+	ClaimEvent(ctx context.Context, lease time.Duration) (DeliveryJob, error)
+	FinishEvent(ctx context.Context, job DeliveryJob, result domain.DeliveryResult) error
+	GetEndpoint(ctx context.Context, id string) (domain.Endpoint, error)
 }

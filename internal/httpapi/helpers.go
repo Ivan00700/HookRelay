@@ -22,20 +22,6 @@ func withStorageTimeout(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-type apiError struct {
-	status  int
-	code    string
-	message string
-}
-
-type errorBody struct {
-	Error struct {
-		Code    string `json:"code"`
-		Field   string `json:"field,omitempty"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) *apiError {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	decoder := json.NewDecoder(r.Body)

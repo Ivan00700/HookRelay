@@ -16,8 +16,7 @@ import (
 func TestRetryAndAttemptRoutes(t *testing.T) {
 	store := repository.NewMemoryStore()
 	mux := http.NewServeMux()
-	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store)
+	NewHandler(store).RegisterRoutes(mux)
 	created := request(mux, http.MethodPost, "/api/v1/endpoints", `{"name":"orders","url":"http://example.test","secret":"private"}`)
 	var endpoint domain.Endpoint
 	if err := json.Unmarshal(created.Body.Bytes(), &endpoint); err != nil {

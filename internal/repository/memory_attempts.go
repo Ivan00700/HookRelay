@@ -18,6 +18,7 @@ func (s *MemoryStore) ListAttempts(ctx context.Context, eventID string) ([]domai
 		return nil, ErrNotFound
 	}
 	attempts := make([]domain.DeliveryAttempt, 0, len(s.attempts[eventID]))
+	// Копируем значения указателей, чтобы вызывающий код не изменил хранилище.
 	for _, attempt := range s.attempts[eventID] {
 		if attempt.FinishedAt != nil {
 			finished := *attempt.FinishedAt
@@ -45,6 +46,7 @@ func (s *MemoryStore) RetryEvent(ctx context.Context, id string) (domain.Event, 
 	if event.Status != domain.DeliveryStatusFailed {
 		return domain.Event{}, ErrConflict
 	}
+	// Начинаем новый цикл, сохраняя историю и её общую нумерацию.
 	event.Status = domain.DeliveryStatusPending
 	s.events[id] = event
 	s.cycles[id] = 0

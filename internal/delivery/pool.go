@@ -3,7 +3,6 @@ package delivery
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 	"time"
 
@@ -18,9 +17,10 @@ const (
 )
 
 type EventSender interface {
-	Send(context.Context, domain.Event, domain.Endpoint) (int, error)
+	Send(ctx context.Context, event domain.Event, endpoint domain.Endpoint) (int, error)
 }
 
+// Pool хранит зависимости воркеров и управляет их завершением.
 type Pool struct {
 	store  repository.DeliveryStore
 	sender EventSender
@@ -34,7 +34,12 @@ func NewPool(store repository.DeliveryStore, sender EventSender, workers int) (*
 		return nil, errors.New("store, sender and a positive worker count are required")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	pool := &Pool{store: store, sender: sender, ctx: ctx, cancel: cancel}
+	pool := &Pool{
+		store:  store,
+		sender: sender,
+		ctx:    ctx,
+		cancel: cancel,
+	}
 	pool.wg.Add(workers)
 	for i := 0; i < workers; i++ {
 		go pool.worker()
@@ -42,54 +47,8 @@ func NewPool(store repository.DeliveryStore, sender EventSender, workers int) (*
 	return pool, nil
 }
 
-// Close stops claiming jobs and waits for deliveries already in progress.
+// Close прекращает захват заданий и дожидается уже начатых отправок.
 func (p *Pool) Close() {
 	p.cancel()
 	p.wg.Wait()
-}
-
-func (p *Pool) worker() {
-	defer p.wg.Done()
-	for p.ctx.Err() == nil {
-		ctx, cancel := context.WithTimeout(p.ctx, 5*time.Second)
-		job, err := p.store.ClaimEvent(ctx, leaseDuration)
-		cancel()
-		if err == nil {
-			p.deliver(job)
-			continue
-		}
-		if p.ctx.Err() != nil {
-			return
-		}
-		if !errors.Is(err, repository.ErrNoJob) {
-			log.Printf("claim delivery: %v", err)
-		}
-		timer := time.NewTimer(pollInterval)
-		select {
-		case <-p.ctx.Done():
-		case <-timer.C:
-		}
-		timer.Stop()
-	}
-}
-
-func (p *Pool) deliver(job repository.DeliveryJob) {
-	ctx, cancel := context.WithTimeout(context.Background(), jobTimeout)
-	defer cancel()
-	endpoint, err := p.store.GetEndpoint(ctx, job.Event.EndpointID)
-	if err != nil {
-		log.Printf("get endpoint for event %s: %v", job.Event.ID, err)
-		return
-	}
-	status, err := p.sender.Send(ctx, job.Event, endpoint)
-	result := domain.DeliveryResult{HTTPStatus: status, Retryable: shouldRetry(status, err)}
-	if err != nil {
-		log.Printf("delivery of event %s failed: %v", job.Event.ID, err)
-		result.ErrorMessage = err.Error()
-	}
-	finishCtx, finishCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer finishCancel()
-	if err := p.store.FinishEvent(finishCtx, job, result); err != nil {
-		log.Printf("finish delivery of event %s: %v", job.Event.ID, err)
-	}
 }

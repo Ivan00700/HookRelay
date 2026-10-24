@@ -2,6 +2,7 @@ package delivery
 
 import "errors"
 
+// Повторяем только временные ошибки; ошибку создания запроса повтор не исправит.
 func shouldRetry(status int, err error) bool {
 	if err == nil || errors.Is(err, ErrInvalidRequest) {
 		return false

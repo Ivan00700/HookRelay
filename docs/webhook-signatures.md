@@ -37,7 +37,7 @@ header = "sha256=" + lowercase_hex(digest)
 
 Не нужно сначала разбирать JSON и сериализовать его обратно: пробелы, переносы и порядок ключей влияют на подпись. PostgreSQL хранит payload как JSONB и может изменить форматирование по сравнению с входным API-запросом. Проверять нужно именно полученное HTTP-тело.
 
-В репозитории проверка находится в `internal/signature.Verify`, а рабочий пример HTTP-обработчика — в `examples/receiver/main.go`.
+В репозитории проверка находится в `internal/signature.Verify`, рабочий пример HTTP-обработчика — в `examples/receiver/handler.go`, а запуск примера — в `examples/receiver/main.go`.
 
 ## Запуск примера
 

@@ -18,8 +18,7 @@ import (
 func testMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	store := repository.NewMemoryStore()
-	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store)
+	NewHandler(store).RegisterRoutes(mux)
 	return mux
 }
 
@@ -108,7 +107,7 @@ func TestCreateEventPersistsWithoutWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	RegisterEvents(mux, store)
+	NewHandler(store).RegisterEvents(mux)
 	response := request(mux, http.MethodPost, "/api/v1/events", `{"endpoint_id":"ep-1","type":"order.created","payload":{}}`)
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create event: %d %s", response.Code, response.Body.String())
@@ -134,8 +133,7 @@ func TestEventIsDeliveredByPool(t *testing.T) {
 	}
 	defer pool.Close()
 	mux := http.NewServeMux()
-	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store)
+	NewHandler(store).RegisterRoutes(mux)
 
 	endpointBody := fmt.Sprintf(`{"name":"orders","url":%q,"secret":"private"}`, receiver.URL)
 	createdEndpoint := request(mux, http.MethodPost, "/api/v1/endpoints", endpointBody)
