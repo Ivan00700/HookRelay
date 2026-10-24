@@ -2,12 +2,13 @@ package httpapi
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"time"
 
 	"hookrelay/internal/domain"
 	"hookrelay/internal/repository"
+
+	"hookrelay/internal/observability"
 )
 
 func (h *Handler) RegisterEndpoints(mux *http.ServeMux) {
@@ -20,7 +21,7 @@ func (h *Handler) RegisterEndpoints(mux *http.ServeMux) {
 func (h *Handler) listEndpoints(w http.ResponseWriter, r *http.Request) {
 	endpoints, err := h.store.ListEndpoints(r.Context())
 	if err != nil {
-		log.Printf("list endpoints: %v", err)
+		observability.Logger(r.Context()).Error("list endpoints", "error_kind", observability.ErrorKind(err))
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 		return
 	}
@@ -28,7 +29,7 @@ func (h *Handler) listEndpoints(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createEndpoint(w http.ResponseWriter, r *http.Request) {
-	// 1) Читаем и проверяем входные данные.
+	// читаем и проверяем входные данные
 	var input *domain.CreateEndpointInput
 	if requestErr := decodeJSON(w, r, &input); requestErr != nil {
 		writeError(w, requestErr.status, requestErr.code, requestErr.message, "")
@@ -44,15 +45,15 @@ func (h *Handler) createEndpoint(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "validation_error", validationErr.Message, validationErr.Field)
 			return
 		}
-		log.Printf("validate endpoint: %v", err)
+		observability.Logger(r.Context()).Error("validate endpoint", "error_kind", observability.ErrorKind(err))
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 		return
 	}
 
-	// 2) Формируем запись с ID и временем создания.
+	// формируем запись с ID и временем создания
 	id, err := newID()
 	if err != nil {
-		log.Printf("generate endpoint ID: %v", err)
+		observability.Logger(r.Context()).Error("generate endpoint ID", "error_kind", observability.ErrorKind(err))
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 		return
 	}
@@ -63,13 +64,13 @@ func (h *Handler) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		Secret:    input.Secret,
 		CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
 	}
-	// 3) Сохраняем запись и возвращаем результат клиенту.
+	// сохраняем запись и возвращаем результат клиенту
 	if err := h.store.CreateEndpoint(r.Context(), endpoint); err != nil {
 		if errors.Is(err, repository.ErrConflict) {
 			writeError(w, http.StatusConflict, "conflict", "endpoint ID already exists", "")
 			return
 		}
-		log.Printf("create endpoint: %v", err)
+		observability.Logger(r.Context()).Error("create endpoint", "error_kind", observability.ErrorKind(err))
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 		return
 	}
@@ -82,7 +83,7 @@ func (h *Handler) getEndpoint(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, repository.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "not_found", "endpoint not found", "")
 		} else {
-			log.Printf("get endpoint: %v", err)
+			observability.Logger(r.Context()).Error("get endpoint", "error_kind", observability.ErrorKind(err))
 			writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 		}
 		return
@@ -100,7 +101,7 @@ func (h *Handler) deleteEndpoint(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, repository.ErrConflict):
 		writeError(w, http.StatusConflict, "conflict", "endpoint has events", "")
 	default:
-		log.Printf("delete endpoint: %v", err)
+		observability.Logger(r.Context()).Error("delete endpoint", "error_kind", observability.ErrorKind(err))
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 	}
 }

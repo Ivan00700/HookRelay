@@ -14,20 +14,20 @@ var (
 	ErrInvalidConfig = errors.New("invalid PostgreSQL connection configuration")
 )
 
-// Open создаёт пул и проверяет соединение. Пул закрывает вызывающий код.
+// создаём пул и проверяем соединение - пул закрывает вызывающий код
 func Open(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	if strings.TrimSpace(databaseURL) == "" {
 		return nil, ErrMissingURL
 	}
 
-	// 1) Разбираем настройки без вывода строки подключения в ошибку.
+	// разбираем настройки без вывода строки подключения в ошибку
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
-		// Ошибка разбора может содержать пароль, поэтому возвращаем общую ошибку.
+		// ошибка разбора может содержать пароль - поэтому возвращаем общую ошибку
 		return nil, ErrInvalidConfig
 	}
 
-	// 2) Создаём пул и проверяем реальное соединение с PostgreSQL.
+	// создаём пул и проверяем реальное соединение с PostgreSQL
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("create PostgreSQL pool: %w", err)

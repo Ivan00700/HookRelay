@@ -10,7 +10,7 @@ import (
 
 func TestHealthRoute(t *testing.T) {
 	mux := http.NewServeMux()
-	NewHandler(repository.NewMemoryStore()).RegisterRoutes(mux)
+	NewHandler(repository.NewMemoryStore(), nil).RegisterRoutes(mux)
 	for _, test := range []struct {
 		method string
 		status int

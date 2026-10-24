@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Статусы описывают состояние доставки, а не HTTP-запроса клиента.
+// статусы описывают процесс доставки события
 type DeliveryStatus string
 
 const (
@@ -19,7 +19,7 @@ type Endpoint struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	URL       string    `json:"url"`
-	Secret    string    `json:"-"` // Ключ подписи не включается в ответы API.
+	Secret    string    `json:"-"` // ключ подписи не включается в ответы API
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -29,7 +29,7 @@ type CreateEndpointInput struct {
 	Secret string `json:"secret"`
 }
 
-// Event хранит данные события. Payload передаётся получателю как JSON.
+// событие хранит данные - Payload передаётся получателю как JSON
 type Event struct {
 	ID         string          `json:"id"`
 	EndpointID string          `json:"endpoint_id"`
@@ -45,7 +45,7 @@ type CreateEventInput struct {
 	Payload    json.RawMessage `json:"payload"`
 }
 
-// DeliveryAttempt хранит результат одной попытки; nil означает отсутствие значения.
+// попытка хранит результат отправки - nil означает отсутствие значения
 type DeliveryAttempt struct {
 	ID            int64      `json:"id"`
 	EventID       string     `json:"event_id"`

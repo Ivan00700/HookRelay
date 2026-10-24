@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"hookrelay/internal/domain"
+	"hookrelay/internal/observability"
 	"hookrelay/internal/postgres"
 	"hookrelay/internal/signature"
 	"hookrelay/internal/testutil"
@@ -98,6 +99,9 @@ func TestRunPostgresIntegration(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer response.Body.Close()
+		if response.Header.Get(observability.RequestIDHeader) == "" {
+			t.Fatal("API response is missing a request ID")
+		}
 		data, err := io.ReadAll(response.Body)
 		if err != nil || response.StatusCode != wantStatus {
 			t.Fatalf("%s %s: status=%d body=%s err=%v", method, path, response.StatusCode, data, err)
@@ -136,7 +140,7 @@ func TestRunPostgresIntegration(t *testing.T) {
 	defer failing.Close()
 
 	base, stop := start()
-	// Страница и API должны работать на одном сервере, не подменяя маршруты друг друга.
+	// проверяем страницу и API на одном сервере
 	for path, expected := range map[string]string{
 		"/":               "Доставка событий",
 		"/assets/app.js":  "/api/v1/events",
@@ -190,9 +194,19 @@ func TestRunPostgresIntegration(t *testing.T) {
 		savedEvents = append(savedEvents, event)
 		exchange(base, http.MethodDelete, "/api/v1/endpoints/"+endpoint.ID, "", http.StatusConflict)
 	}
+	// счётчики относятся к процессу - очередь и статусы продолжают храниться в БД
+	metrics := string(exchange(base, http.MethodGet, "/metrics", "", http.StatusOK))
+	if !strings.Contains(metrics, "hookrelay_events_accepted_total 2") || !strings.Contains(metrics, "hookrelay_queue_events 0") {
+		t.Fatalf("unexpected metrics before restart: %s", metrics)
+	}
+	exchange(base, http.MethodGet, "/ready", "", http.StatusOK)
 	stop()
 
 	base, _ = start()
+	metrics = string(exchange(base, http.MethodGet, "/metrics", "", http.StatusOK))
+	if !strings.Contains(metrics, "hookrelay_events_accepted_total 0") || !strings.Contains(metrics, `hookrelay_events{status="failed"} 1`) {
+		t.Fatalf("process counters or persisted states after restart: %s", metrics)
+	}
 	exchange(base, http.MethodGet, "/api/v1/endpoints/"+savedEndpoint.ID, "", http.StatusOK)
 	for _, expected := range savedEvents {
 		data := exchange(base, http.MethodGet, "/api/v1/events/"+expected.ID, "", http.StatusOK)

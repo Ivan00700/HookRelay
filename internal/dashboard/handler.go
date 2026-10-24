@@ -5,12 +5,12 @@ import (
 	"net/http"
 )
 
-// Файлы интерфейса входят в бинарник и не зависят от рабочей папки процесса.
+// файлы интерфейса входят в бинарник и не зависят от рабочей папки процесса
 //
 //go:embed assets/*
 var files embed.FS
 
-// RegisterRoutes подключает страницу и её статические файлы.
+// подключает страницу и её статические файлы
 func RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /{$}", index)
 	mux.HandleFunc("GET /assets/app.css", stylesheet)

@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"hookrelay/internal/signature"
@@ -12,7 +12,7 @@ import (
 func newHandler(secret string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /webhook", func(w http.ResponseWriter, r *http.Request) {
-		// 1) Читаем тело с ограничением размера.
+		// читаем тело с ограничением размера
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -25,15 +25,15 @@ func newHandler(secret string) http.Handler {
 			return
 		}
 
-		// 2) Проверяем подпись до обработки события.
+		// проверяем подпись до обработки события
 		values := r.Header.Values(signature.Header)
 		if len(values) != 1 || !signature.Verify(body, secret, values[0]) {
 			http.Error(w, "invalid webhook signature", http.StatusUnauthorized)
 			return
 		}
 
-		// 3) Принимаем событие только после успешной проверки.
-		log.Printf("received signed event %q", r.Header.Get("X-HookRelay-Event-ID"))
+		// принимаем событие только после успешной проверки
+		slog.Info("received signed event", "event_id", r.Header.Get("X-HookRelay-Event-ID"))
 		w.WriteHeader(http.StatusNoContent)
 	})
 	return mux

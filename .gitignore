@@ -1,17 +1,17 @@
-# Compiled binaries
+# собранные бинарники
 /bin/
 *.exe
 
-# Local configuration and secrets
+# локальные настройки и секреты
 .env
 
-# Editor and OS files
+# файлы редактора и операционной системы
 .idea/
 .vscode/
 .DS_Store
 
-# Test output
+# результаты проверок
 coverage.out
 
-# Local scratch files
+# локальные черновики
 .scratch/

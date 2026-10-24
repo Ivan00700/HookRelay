@@ -2,7 +2,7 @@ package domain
 
 import "time"
 
-// Четыре попытки: первая отправка и три повтора.
+// четыре попытки - первая отправка и три повтора
 const MaxDeliveryAttempts = 4
 
 func (r DeliveryResult) Valid() bool {
@@ -15,7 +15,7 @@ func (r DeliveryResult) Valid() bool {
 	return true
 }
 
-// RetryDelay задаёт ожидание после неудачной попытки. Ноль означает конец цикла.
+// задержка после неудачной попытки - ноль означает конец цикла
 func RetryDelay(attempt int) time.Duration {
 	switch attempt {
 	case 1:

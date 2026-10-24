@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
+
+	"hookrelay/internal/observability"
 )
 
 const maxRequestBodyBytes = 1 << 20
@@ -23,6 +25,7 @@ func withStorageTimeout(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) *apiError {
+	// ограничиваем тело и запрещаем неизвестные поля
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -30,6 +33,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) *apiError {
 	if err := decoder.Decode(dst); err != nil {
 		return classifyDecodeError(err)
 	}
+	// второе JSON-значение не должно остаться незамеченным
 	var extra any
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err != nil {
@@ -59,14 +63,15 @@ func newID() (string, error) {
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	body, err := json.Marshal(value)
 	if err != nil {
-		log.Printf("encode JSON response: %v", err)
+		slog.Error("encode JSON response", "error_kind", observability.ErrorKind(err))
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal server error", "")
 		return
 	}
+	// готовим тело до отправки заголовков - после WriteHeader статус уже не изменить
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if _, err := w.Write(append(body, '\n')); err != nil {
-		log.Printf("write JSON response: %v", err)
+		slog.Error("write JSON response", "error_kind", observability.ErrorKind(err))
 	}
 }
 

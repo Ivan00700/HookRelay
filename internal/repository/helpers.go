@@ -31,6 +31,7 @@ func scanEvent(row pgx.Row) (domain.Event, error) {
 }
 
 func databaseError(operation string, err, foreignKeyError error) error {
+	// приводим ошибки PostgreSQL к общим ошибкам репозитория
 	if err == nil {
 		return nil
 	}
@@ -50,7 +51,7 @@ func databaseError(operation string, err, foreignKeyError error) error {
 	return fmt.Errorf("%s: %w", operation, err)
 }
 
-// Откат получает свой контекст: контекст запроса уже мог завершиться.
+// откат получает свой контекст - контекст запроса уже мог завершиться
 func rollback(tx pgx.Tx) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

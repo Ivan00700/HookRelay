@@ -7,7 +7,7 @@ import (
 )
 
 func TestSignRFC4231(t *testing.T) {
-	// RFC 4231, раздел 4.2: проверяем по независимому контрольному примеру.
+	// контрольный пример из RFC 4231 - проверяем HMAC-SHA256 независимо
 	secret := string(bytes.Repeat([]byte{0x0b}, 20))
 	want := "sha256=b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7"
 	if got := Sign([]byte("Hi There"), secret); got != want {

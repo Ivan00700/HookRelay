@@ -52,7 +52,7 @@ func TestPoolWaitsFiveSecondsBeforeRetryIntegration(t *testing.T) {
 	}))
 	defer receiver.Close()
 	retryStore(t, store, receiver.URL)
-	pool, err := NewPool(store, NewSender(receiver.Client()), 2)
+	pool, err := NewPool(store, NewSender(receiver.Client()), 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestPoolExhaustsRetriesIntegration(t *testing.T) {
 	}))
 	defer receiver.Close()
 	retryStore(t, store, receiver.URL)
-	pool, err := NewPool(store, NewSender(receiver.Client()), 2)
+	pool, err := NewPool(store, NewSender(receiver.Client()), 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestPoolExhaustsRetriesIntegration(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		if number < domain.MaxDeliveryAttempts {
-			// Проверяем дату в БД, затем ускоряем только событие этого теста.
+			// проверяем дату в БД - затем ускоряем только событие этого теста
 			var delay float64
 			if err := database.QueryRow(ctx, `
 				SELECT EXTRACT(EPOCH FROM e.next_attempt_at - a.finished_at)

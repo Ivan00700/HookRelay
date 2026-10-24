@@ -7,7 +7,7 @@ import (
 	"hookrelay/internal/domain"
 )
 
-// MemoryStore хранит записи и состояние очереди под одной блокировкой.
+// хранит записи и состояние очереди под одной блокировкой
 type MemoryStore struct {
 	mu            sync.RWMutex
 	endpoints     map[string]domain.Endpoint

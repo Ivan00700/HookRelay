@@ -45,12 +45,12 @@ func TestPoolsShareQueueIntegration(t *testing.T) {
 		mu.Unlock()
 		return nil
 	})
-	first, err := NewPool(store, sender, 2)
+	first, err := NewPool(store, sender, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	second, err := NewPool(repository.NewPostgresStore(database), sender, 2)
+	second, err := NewPool(repository.NewPostgresStore(database), sender, 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,11 +124,11 @@ func TestQueueRecoversAfterProcessCrashIntegration(t *testing.T) {
 	if _, err := store.ClaimEvent(ctx, time.Minute); !errors.Is(err, repository.ErrNoJob) {
 		t.Fatalf("unexpired lease must remain owned after restart: %v", err)
 	}
-	// Сдвигаем только тестовую аренду, чтобы не ждать тридцать секунд.
+	// сдвигаем тестовую аренду без ожидания тридцати секунд
 	if _, err := database.Exec(ctx, `UPDATE events SET lease_until = clock_timestamp() - interval '1 second' WHERE id = 'event'`); err != nil {
 		t.Fatal(err)
 	}
-	pool, err := NewPool(store, NewSender(receiver.Client()), 1)
+	pool, err := NewPool(store, NewSender(receiver.Client()), 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +154,7 @@ func TestQueueCrashHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	pool, err := NewPool(repository.NewPostgresStore(database), NewSender(&http.Client{}), 1)
+	pool, err := NewPool(repository.NewPostgresStore(database), NewSender(&http.Client{}), 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -12,13 +11,15 @@ import (
 	"hookrelay/internal/dashboard"
 	"hookrelay/internal/delivery"
 	"hookrelay/internal/httpapi"
+	"hookrelay/internal/observability"
 	"hookrelay/internal/postgres"
 	"hookrelay/internal/repository"
 )
 
-// Run собирает зависимости, запускает HTTP-сервер и дожидается остановки.
+// собирает зависимости - запускает HTTP-сервер и дожидается остановки
 func Run(stopCtx context.Context) error {
-	// 1) Подключаем хранилище и проверяем схему очереди.
+	logger := observability.NewLogger(os.Stderr)
+	// подключаем хранилище и проверяем схему очереди
 	startupCtx, cancel := context.WithTimeout(stopCtx, 5*time.Second)
 	database, err := postgres.Open(startupCtx, os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -32,23 +33,24 @@ func Run(stopCtx context.Context) error {
 	if err != nil {
 		return err
 	}
+	monitor := observability.NewMonitor(logger, store.EventCounts)
 
-	// 2) Запускаем воркеры с общим HTTP-клиентом.
-	pool, err := delivery.NewPool(store, delivery.NewSender(&http.Client{}), 2)
+	// запускаем воркеры с общим HTTP-клиентом
+	pool, err := delivery.NewPool(store, delivery.NewSender(&http.Client{}), 2, monitor)
 	if err != nil {
 		return fmt.Errorf("create delivery pool: %w", err)
 	}
 
-	// 3) Регистрируем маршруты и запускаем сервер.
+	// регистрируем маршруты и запускаем сервер
 	mux := http.NewServeMux()
-	handler := httpapi.NewHandler(store)
+	handler := httpapi.NewHandler(store, monitor)
 	handler.RegisterRoutes(mux)
 	dashboard.RegisterRoutes(mux)
 	port := httpPort()
 
 	srv := &http.Server{
 		Addr:              ":" + port,
-		Handler:           mux,
+		Handler:           monitor.HTTP(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -57,17 +59,17 @@ func Run(stopCtx context.Context) error {
 		serveErrors <- srv.ListenAndServe()
 	}()
 
-	log.Printf("starting server on http://localhost:%s", port)
-	// 4) После сигнала завершаем HTTP-запросы, затем активные доставки.
+	logger.Info("server starting", "port", port)
+	// после сигнала завершаем HTTP-запросы - затем активные доставки
 	var runErr error
 	select {
 	case <-stopCtx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		if err := srv.Shutdown(shutdownCtx); err != nil {
 			runErr = fmt.Errorf("shutdown HTTP server: %w", err)
-			log.Printf("graceful HTTP shutdown: %v", err)
+			logger.Error("http shutdown failed", "error_kind", observability.ErrorKind(err))
 			if closeErr := srv.Close(); closeErr != nil {
-				log.Printf("close HTTP server: %v", closeErr)
+				logger.Error("http close failed", "error_kind", observability.ErrorKind(closeErr))
 			}
 		}
 		cancel()
@@ -78,6 +80,6 @@ func Run(stopCtx context.Context) error {
 		}
 	}
 	pool.Close()
-	log.Print("delivery workers stopped")
+	logger.Info("delivery workers stopped")
 	return runErr
 }

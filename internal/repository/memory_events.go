@@ -23,6 +23,7 @@ func (s *MemoryStore) CreateEvent(ctx context.Context, event domain.Event) error
 		return ErrConflict
 	}
 
+	// копируем Payload - внешний код не должен менять сохранённые данные
 	event.Payload = bytes.Clone(event.Payload)
 	s.events[event.ID] = event
 	s.next[event.ID] = time.Now().UTC()
