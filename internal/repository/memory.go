@@ -11,11 +11,15 @@ import (
 )
 
 type MemoryStore struct {
-	mu        sync.RWMutex
-	endpoints map[string]domain.Endpoint
-	events    map[string]domain.Event
-	leases    map[string]time.Time
-	versions  map[string]int64
+	mu            sync.RWMutex
+	endpoints     map[string]domain.Endpoint
+	events        map[string]domain.Event
+	leases        map[string]time.Time
+	versions      map[string]int64
+	attempts      map[string][]domain.DeliveryAttempt
+	cycles        map[string]int
+	next          map[string]time.Time
+	lastAttemptID int64
 }
 
 var _ Store = (*MemoryStore)(nil)
@@ -26,6 +30,9 @@ func NewMemoryStore() *MemoryStore {
 		events:    make(map[string]domain.Event),
 		leases:    make(map[string]time.Time),
 		versions:  make(map[string]int64),
+		attempts:  make(map[string][]domain.DeliveryAttempt),
+		cycles:    make(map[string]int),
+		next:      make(map[string]time.Time),
 	}
 }
 
@@ -112,6 +119,7 @@ func (s *MemoryStore) CreateEvent(ctx context.Context, event domain.Event) error
 
 	event.Payload = bytes.Clone(event.Payload)
 	s.events[event.ID] = event
+	s.next[event.ID] = time.Now().UTC()
 	return nil
 }
 
@@ -124,8 +132,13 @@ func (s *MemoryStore) DeleteEvent(ctx context.Context, id string) error {
 	if _, ok := s.events[id]; !ok {
 		return ErrNotFound
 	}
+	if len(s.attempts[id]) > 0 {
+		return ErrConflict
+	}
 	delete(s.events, id)
 	delete(s.leases, id)
+	delete(s.cycles, id)
+	delete(s.next, id)
 	return nil
 }
 
@@ -142,6 +155,9 @@ func (s *MemoryStore) UpdateEventStatus(ctx context.Context, id string, status d
 	}
 	if _, leased := s.leases[id]; leased {
 		return ErrLeaseLost
+	}
+	if status == domain.DeliveryStatusPending {
+		return ErrInvalidTransition
 	}
 	if !domain.CanTransition(event.Status, status) {
 		return ErrInvalidTransition

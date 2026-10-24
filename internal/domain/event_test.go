@@ -12,6 +12,8 @@ func TestCanTransition(t *testing.T) {
 		{"pending to processing", DeliveryStatusPending, DeliveryStatusProcessing, true},
 		{"processing to delivered", DeliveryStatusProcessing, DeliveryStatusDelivered, true},
 		{"processing to failed", DeliveryStatusProcessing, DeliveryStatusFailed, true},
+		{"processing to pending for retry", DeliveryStatusProcessing, DeliveryStatusPending, true},
+		{"failed to pending for manual retry", DeliveryStatusFailed, DeliveryStatusPending, true},
 		{"pending to delivered", DeliveryStatusPending, DeliveryStatusDelivered, false},
 		{"pending to failed", DeliveryStatusPending, DeliveryStatusFailed, false},
 		{"delivered to processing", DeliveryStatusDelivered, DeliveryStatusProcessing, false},

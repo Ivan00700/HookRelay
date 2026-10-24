@@ -135,6 +135,9 @@ func (s *PostgresStore) UpdateEventStatus(ctx context.Context, id string, status
 	if leaseUntil != nil {
 		return ErrLeaseLost
 	}
+	if status == domain.DeliveryStatusPending {
+		return ErrInvalidTransition
+	}
 	if !domain.CanTransition(current, status) {
 		return ErrInvalidTransition
 	}

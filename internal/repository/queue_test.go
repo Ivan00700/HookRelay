@@ -37,27 +37,31 @@ func checkQueue(t *testing.T, store queueStore, expire func(string)) {
 	if _, err := store.ClaimEvent(ctx, time.Minute); !errors.Is(err, ErrNoJob) {
 		t.Fatalf("active jobs must not be claimed again: %v", err)
 	}
-	if err := store.FinishEvent(ctx, first, domain.DeliveryStatusPending); !errors.Is(err, ErrInvalidTransition) {
+	if err := store.FinishEvent(ctx, first, domain.DeliveryResult{}); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("invalid finish: %v", err)
 	}
 	if err := store.UpdateEventStatus(ctx, "a", domain.DeliveryStatusDelivered); !errors.Is(err, ErrLeaseLost) {
 		t.Fatalf("unfenced status update was accepted: %v", err)
 	}
 	expire("a")
-	if err := store.FinishEvent(ctx, first, domain.DeliveryStatusDelivered); !errors.Is(err, ErrLeaseLost) {
+	if err := store.FinishEvent(ctx, first, domain.DeliveryResult{HTTPStatus: 204}); !errors.Is(err, ErrLeaseLost) {
 		t.Fatalf("expired lease was accepted: %v", err)
 	}
 	reclaimed, err := store.ClaimEvent(ctx, time.Minute)
 	if err != nil || reclaimed.Event.ID != "a" || reclaimed.LeaseVersion <= first.LeaseVersion {
 		t.Fatalf("reclaimed job: %+v, %v", reclaimed, err)
 	}
-	if err := store.FinishEvent(ctx, first, domain.DeliveryStatusFailed); !errors.Is(err, ErrLeaseLost) {
+	if err := store.FinishEvent(ctx, first, domain.DeliveryResult{HTTPStatus: 400, ErrorMessage: "bad request"}); !errors.Is(err, ErrLeaseLost) {
 		t.Fatalf("old owner overwrote new lease: %v", err)
 	}
-	if err := store.FinishEvent(ctx, reclaimed, domain.DeliveryStatusDelivered); err != nil {
+	if err := store.FinishEvent(ctx, reclaimed, domain.DeliveryResult{HTTPStatus: 204}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.FinishEvent(ctx, second, domain.DeliveryStatusFailed); err != nil {
+	attempts, err := store.ListAttempts(ctx, "a")
+	if err != nil || len(attempts) != 2 || attempts[0].HTTPStatus != nil || attempts[0].ErrorMessage == "" || attempts[1].HTTPStatus == nil || *attempts[1].HTTPStatus != 204 {
+		t.Fatalf("stale owner changed history: %+v, %v", attempts, err)
+	}
+	if err := store.FinishEvent(ctx, second, domain.DeliveryResult{HTTPStatus: 400, ErrorMessage: "bad request"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ClaimEvent(ctx, time.Minute); !errors.Is(err, ErrNoJob) {
@@ -70,7 +74,7 @@ func checkQueue(t *testing.T, store queueStore, expire func(string)) {
 	if err != nil || legacy.Event.ID != "legacy" {
 		t.Fatalf("legacy processing event was not recovered: %+v, %v", legacy, err)
 	}
-	if err := store.FinishEvent(ctx, legacy, domain.DeliveryStatusDelivered); err != nil {
+	if err := store.FinishEvent(ctx, legacy, domain.DeliveryResult{HTTPStatus: 204}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ClaimEvent(ctx, 0); err == nil {

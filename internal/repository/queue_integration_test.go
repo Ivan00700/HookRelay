@@ -97,7 +97,7 @@ func TestPostgresQueueConcurrentClaimsIntegration(t *testing.T) {
 			t.Fatalf("event was claimed twice: %s", job.Event.ID)
 		}
 		seen[job.Event.ID] = true
-		if err := store.FinishEvent(ctx, job, domain.DeliveryStatusDelivered); err != nil {
+		if err := store.FinishEvent(ctx, job, domain.DeliveryResult{HTTPStatus: 204}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -127,7 +127,7 @@ func TestPostgresQueueLeaseExpiresIntegration(t *testing.T) {
 			if second.Event.ID != first.Event.ID || second.LeaseVersion <= first.LeaseVersion {
 				t.Fatalf("wrong recovered job: %+v", second)
 			}
-			if err := store.FinishEvent(ctx, first, domain.DeliveryStatusFailed); !errors.Is(err, ErrLeaseLost) {
+			if err := store.FinishEvent(ctx, first, domain.DeliveryResult{HTTPStatus: 400, ErrorMessage: "bad request"}); !errors.Is(err, ErrLeaseLost) {
 				t.Fatalf("expired owner finished the event: %v", err)
 			}
 			return

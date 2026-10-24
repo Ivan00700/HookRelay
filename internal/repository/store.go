@@ -23,4 +23,6 @@ type Store interface {
 	UpdateEventStatus(context.Context, string, domain.DeliveryStatus) error
 	GetEvent(context.Context, string) (domain.Event, error)
 	ListEvents(context.Context) ([]domain.Event, error)
+	ListAttempts(context.Context, string) ([]domain.DeliveryAttempt, error)
+	RetryEvent(context.Context, string) (domain.Event, error)
 }

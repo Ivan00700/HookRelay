@@ -25,7 +25,9 @@ func CanTransition(from, to DeliveryStatus) bool {
 	case DeliveryStatusPending:
 		return to == DeliveryStatusProcessing
 	case DeliveryStatusProcessing:
-		return to == DeliveryStatusDelivered || to == DeliveryStatusFailed
+		return to == DeliveryStatusDelivered || to == DeliveryStatusFailed || to == DeliveryStatusPending
+	case DeliveryStatusFailed:
+		return to == DeliveryStatusPending
 	default:
 		return false
 	}
