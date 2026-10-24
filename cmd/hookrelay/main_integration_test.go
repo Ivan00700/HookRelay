@@ -28,6 +28,19 @@ func TestRunRequiresDatabaseURL(t *testing.T) {
 	}
 }
 
+func TestRunRejectsMissingQueueMigrationIntegration(t *testing.T) {
+	database, databaseURL := testutil.Database(t)
+	t.Setenv("DATABASE_URL", databaseURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := database.Exec(ctx, `ALTER TABLE events DROP COLUMN lease_until`); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(ctx); err == nil || !strings.Contains(err.Error(), "queue schema") {
+		t.Fatalf("expected queue schema startup error, got %v", err)
+	}
+}
+
 func TestRunPostgresIntegration(t *testing.T) {
 	_, databaseURL := testutil.Database(t)
 	t.Setenv("DATABASE_URL", databaseURL)

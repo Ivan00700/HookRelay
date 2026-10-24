@@ -5,6 +5,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 
 	"hookrelay/internal/domain"
 )
@@ -13,6 +14,8 @@ type MemoryStore struct {
 	mu        sync.RWMutex
 	endpoints map[string]domain.Endpoint
 	events    map[string]domain.Event
+	leases    map[string]time.Time
+	versions  map[string]int64
 }
 
 var _ Store = (*MemoryStore)(nil)
@@ -21,6 +24,8 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		endpoints: make(map[string]domain.Endpoint),
 		events:    make(map[string]domain.Event),
+		leases:    make(map[string]time.Time),
+		versions:  make(map[string]int64),
 	}
 }
 
@@ -120,6 +125,7 @@ func (s *MemoryStore) DeleteEvent(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	delete(s.events, id)
+	delete(s.leases, id)
 	return nil
 }
 
@@ -133,6 +139,9 @@ func (s *MemoryStore) UpdateEventStatus(ctx context.Context, id string, status d
 	event, ok := s.events[id]
 	if !ok {
 		return ErrNotFound
+	}
+	if _, leased := s.leases[id]; leased {
+		return ErrLeaseLost
 	}
 	if !domain.CanTransition(event.Status, status) {
 		return ErrInvalidTransition

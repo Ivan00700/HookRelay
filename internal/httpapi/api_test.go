@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,19 +15,11 @@ import (
 	"hookrelay/internal/repository"
 )
 
-type noOpPublisher struct{}
-
-func (noOpPublisher) Submit(string) error { return nil }
-
-type rejectingPublisher struct{}
-
-func (rejectingPublisher) Submit(string) error { return errors.New("queue unavailable") }
-
 func testMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	store := repository.NewMemoryStore()
 	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store, noOpPublisher{})
+	RegisterEvents(mux, store)
 	return mux
 }
 
@@ -111,17 +102,19 @@ func TestDeleteEndpointWithoutEvents(t *testing.T) {
 	assertAPIError(t, request(mux, http.MethodGet, "/api/v1/events/missing", ""), http.StatusNotFound, "not_found", "")
 }
 
-func TestCreateEventRollsBackWhenQueueUnavailable(t *testing.T) {
+func TestCreateEventPersistsWithoutWorkers(t *testing.T) {
 	store := repository.NewMemoryStore()
 	if err := store.CreateEndpoint(context.Background(), domain.Endpoint{ID: "ep-1"}); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	RegisterEvents(mux, store, rejectingPublisher{})
+	RegisterEvents(mux, store)
 	response := request(mux, http.MethodPost, "/api/v1/events", `{"endpoint_id":"ep-1","type":"order.created","payload":{}}`)
-	assertAPIError(t, response, http.StatusServiceUnavailable, "delivery_unavailable", "")
-	if got, err := store.ListEvents(context.Background()); err != nil || len(got) != 0 {
-		t.Fatalf("events after failed enqueue = %+v, want none", got)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("create event: %d %s", response.Code, response.Body.String())
+	}
+	if got, err := store.ListEvents(context.Background()); err != nil || len(got) != 1 || got[0].Status != domain.DeliveryStatusPending {
+		t.Fatalf("pending event was not saved: %+v, %v", got, err)
 	}
 }
 
@@ -135,14 +128,14 @@ func TestEventIsDeliveredByPool(t *testing.T) {
 	defer receiver.Close()
 
 	store := repository.NewMemoryStore()
-	pool, err := delivery.NewPool(store, delivery.NewSender(receiver.Client()), 2, 4)
+	pool, err := delivery.NewPool(store, delivery.NewSender(receiver.Client()), 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer pool.Close()
 	mux := http.NewServeMux()
 	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store, pool)
+	RegisterEvents(mux, store)
 
 	endpointBody := fmt.Sprintf(`{"name":"orders","url":%q,"secret":"private"}`, receiver.URL)
 	createdEndpoint := request(mux, http.MethodPost, "/api/v1/endpoints", endpointBody)

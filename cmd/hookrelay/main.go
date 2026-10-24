@@ -45,11 +45,17 @@ func main() {
 func run(stopCtx context.Context) error {
 	startupCtx, cancel := context.WithTimeout(stopCtx, 5*time.Second)
 	database, err := postgres.Open(startupCtx, os.Getenv("DATABASE_URL"))
-	cancel()
 	if err != nil {
+		cancel()
 		return fmt.Errorf("open storage: %w", err)
 	}
 	defer database.Close()
+	store := repository.NewPostgresStore(database)
+	err = store.CheckQueueSchema(startupCtx)
+	cancel()
+	if err != nil {
+		return err
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -59,13 +65,12 @@ func run(stopCtx context.Context) error {
 		port = "8080"
 	}
 
-	store := repository.NewPostgresStore(database)
-	pool, err := delivery.NewPool(store, delivery.NewSender(&http.Client{}), 2, 64)
+	pool, err := delivery.NewPool(store, delivery.NewSender(&http.Client{}), 2)
 	if err != nil {
 		return fmt.Errorf("create delivery pool: %w", err)
 	}
 	httpapi.RegisterEndpoints(mux, store)
-	httpapi.RegisterEvents(mux, store, pool)
+	httpapi.RegisterEvents(mux, store)
 
 	srv := &http.Server{
 		Addr:              ":" + port,

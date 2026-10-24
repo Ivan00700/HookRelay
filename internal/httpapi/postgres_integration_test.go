@@ -17,7 +17,7 @@ func TestPostgresAPIErrorsIntegration(t *testing.T) {
 	store := repository.NewPostgresStore(pool)
 	mux := http.NewServeMux()
 	RegisterEndpoints(mux, store)
-	RegisterEvents(mux, store, rejectingPublisher{})
+	RegisterEvents(mux, store)
 	created := request(mux, http.MethodPost, "/api/v1/endpoints", `{"name":"orders","url":"http://example.test","secret":"private"}`)
 	if created.Code != http.StatusCreated || strings.Contains(created.Body.String(), "private") {
 		t.Fatalf("create endpoint: %d %s", created.Code, created.Body.String())
@@ -38,10 +38,14 @@ func TestPostgresAPIErrorsIntegration(t *testing.T) {
 		t.Fatalf("created_at changed after reading: %v != %v", endpoint.CreatedAt, persisted.CreatedAt)
 	}
 	body := fmt.Sprintf(`{"endpoint_id":%q,"type":"order.created","payload":{}}`, endpoint.ID)
-	assertAPIError(t, request(mux, http.MethodPost, "/api/v1/events", body), http.StatusServiceUnavailable, "delivery_unavailable", "")
+	createdEvent := request(mux, http.MethodPost, "/api/v1/events", body)
+	if createdEvent.Code != http.StatusCreated {
+		t.Fatalf("create event without workers: %d %s", createdEvent.Code, createdEvent.Body.String())
+	}
 	listed := request(mux, http.MethodGet, "/api/v1/events", "")
-	if listed.Code != http.StatusOK || strings.TrimSpace(listed.Body.String()) != "[]" {
-		t.Fatalf("failed enqueue left an event: %d %s", listed.Code, listed.Body.String())
+	var saved []domain.Event
+	if err := json.Unmarshal(listed.Body.Bytes(), &saved); err != nil || listed.Code != http.StatusOK || len(saved) != 1 || saved[0].Status != domain.DeliveryStatusPending {
+		t.Fatalf("pending event without workers: %d %s, %v", listed.Code, listed.Body.String(), err)
 	}
 	assertAPIError(t, request(mux, http.MethodGet, "/api/v1/endpoints/missing", ""), http.StatusNotFound, "not_found", "")
 	assertAPIError(t, request(mux, http.MethodGet, "/api/v1/events/missing", ""), http.StatusNotFound, "not_found", "")
