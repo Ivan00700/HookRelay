@@ -71,7 +71,7 @@ HTTP-гистограмма измеряет весь обработчик. За
 docker compose --profile monitoring up -d --wait prometheus
 ```
 
-Откройте `http://localhost:9090/`. Конфигурация находится в `deploy/prometheus.yaml`; Prometheus запрашивает приложение на `host.docker.internal:8080` каждые пять секунд. Приложение запускается в Windows, Prometheus — в Docker Desktop. Если HTTP_PORT изменён, исправьте target в конфигурации и перезапустите Prometheus.
+Откройте `http://localhost:9090/`. Конфигурация находится в `deploy/prometheus.yaml`; Prometheus запрашивает контейнер приложения на `app:8080` каждые пять секунд. Изменение внешнего HTTP_PORT не меняет внутренний порт. Сначала запустите `docker compose up -d --build --wait`. Если Go-приложение работает непосредственно в Windows, замените target на `host.docker.internal:8080` (или выбранный HTTP_PORT) и перезапустите Prometheus.
 
 Порт интерфейса Prometheus можно изменить переменной PROMETHEUS_PORT. По умолчанию он опубликован только на `127.0.0.1:9090`. История хранится в именованном томе prometheus_data с retention 24 часа.
 

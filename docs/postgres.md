@@ -1,6 +1,6 @@
 # PostgreSQL
 
-Docker Compose запускает PostgreSQL 17 отдельно от HTTP-сервиса. Имена пользователя и базы — `hookrelay`. HTTP API и воркеры используют `PostgresStore`, а `dbcheck` проверяет доступность PostgreSQL через `pgx`. Для обеих команд нужна `DATABASE_URL`.
+Docker Compose запускает PostgreSQL 17 и Go-приложение отдельными контейнерами. Имена пользователя и базы — `hookrelay`. HTTP API и воркеры используют `PostgresStore`, а `dbcheck` проверяет доступность PostgreSQL через `pgx`. Для обеих команд нужна `DATABASE_URL`. Полный запуск описан в [развёртывании](deployment.md); команда ниже запускает только БД для разработки.
 
 ## Запуск базы
 
@@ -34,9 +34,9 @@ docker compose ps
 | `004_event_queue.sql` | `events` | Срок и номер аренды задания, индексы очереди |
 | `005_delivery_retries.sql` | `events` | Общий счётчик попыток, счётчик текущего цикла, время следующей отправки |
 
-SQL-файлы применяются вручную, по порядку и один раз для каждой базы. Автоматического учёта применённых миграций в проекте нет. Повторный `CREATE TABLE` сообщает об уже существующей таблице.
+При первом запуске пустого тома через Compose SQL-файлы применяет официальный образ PostgreSQL из `/docker-entrypoint-initdb.d`. Для существующего тома этот механизм не запускается. Автоматического учёта версий миграций нет: при обновлении нужно применять только недостающие файлы. Повторный `CREATE TABLE` сообщает об уже существующей таблице.
 
-Для пустой базы выполните все пять файлов:
+Следующая ручная команда нужна для пустой базы, которая создана без инициализации Compose. Если `docker compose up -d --wait db` уже создал таблицы, повторять её нельзя:
 
 ```powershell
 Get-Content -Raw migrations/001_init.sql,migrations/002_create_events.sql,migrations/003_create_delivery_attempts.sql,migrations/004_event_queue.sql,migrations/005_delivery_retries.sql | docker compose exec -T db psql -U hookrelay -d hookrelay -v ON_ERROR_STOP=1 --single-transaction -f -
