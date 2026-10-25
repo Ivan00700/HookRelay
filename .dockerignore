@@ -1,0 +1,10 @@
+.git
+.env
+.scratch
+.idea
+.vscode
+bin
+coverage.out
+*.exe
+docs
+TASKS.md

@@ -1,0 +1,94 @@
+name: Проверки
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go и PostgreSQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: hookrelay
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: hookrelay
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hookrelay -d hookrelay"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://hookrelay:ci-test-password@127.0.0.1:5432/hookrelay?sslmode=disable
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go test -count=1 -timeout=2m ./...
+      - run: go test -count=1 -race -timeout=2m ./...
+      - run: go vet ./...
+      - run: go build ./...
+
+  compose:
+    name: Сборка и доставка в Docker
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      COMPOSE_PROJECT_NAME: hookrelay-ci
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_PORT: "55433"
+      HTTP_PORT: "18080"
+      PROMETHEUS_PORT: "19090"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Запуск с пустым томом
+        run: docker compose --profile demo --profile monitoring up -d --build --wait
+      - name: Проверка HTTP и пользователя контейнера
+        run: |
+          curl -fsS http://localhost:18080/ready
+          curl -fsS http://localhost:18080/ | grep 'Доставка событий'
+          test "$(docker compose exec -T app id -u)" != 0
+      - name: Доставка событий с подписью
+        run: |
+          docker compose exec -T app /app/loadgen -endpoint-url http://receiver:9000/webhook -secret dev-secret -count 50 -concurrency 4 > report.json
+          python3 -c 'import json; r=json.load(open("report.json")); assert r["accepted"] == r["delivered"] == 50 and r["rejected"] == r["failed"] == r["unfinished"] == 0, r'
+      - name: Проверка неверной подписи
+        run: |
+          if docker compose exec -T app /app/loadgen -endpoint-url http://receiver:9000/webhook -secret wrong-secret -count 3 > failed.json; then
+            echo 'ожидался ненулевой код выхода'
+            exit 1
+          fi
+          python3 -c 'import json; r=json.load(open("failed.json")); assert r["accepted"] == r["failed"] == 3 and r["unfinished"] == 0, r'
+      - name: Сохранение данных после пересоздания контейнеров
+        run: |
+          docker compose --profile demo --profile monitoring down
+          docker compose --profile demo --profile monitoring up -d --wait
+          curl -fsS http://localhost:18080/api/v1/events | python3 -c 'import json,sys; r=json.load(sys.stdin); assert len(r) == 53 and sum(e["status"] == "delivered" for e in r) == 50 and sum(e["status"] == "failed" for e in r) == 3'
+          curl -fsS http://localhost:18080/metrics | grep '^hookrelay_events_accepted_total 0$'
+      - name: Сбор метрик Prometheus
+        run: |
+          for attempt in {1..30}; do
+            if curl -fsSG http://localhost:19090/api/v1/query --data-urlencode 'query=up{job="hookrelay"}' | python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if any(v["value"][1] == "1" for v in r["data"]["result"]) else 1)'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          exit 1
+      - name: Логи при ошибке
+        if: failure()
+        run: docker compose --profile demo --profile monitoring logs --tail 80
+      - name: Очистка временного окружения
+        if: always()
+        run: docker compose --profile demo --profile monitoring down -v

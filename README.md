@@ -39,11 +39,11 @@ REST API / веб-панель → PostgreSQL: pending
           история + delivered / failed / pending с датой повтора
 ```
 
-![Веб-панель HookRelay](docs/images/dashboard.png)
+Веб-панель открывается на главной странице: формы создания endpoint и отправки события, таблица статусов, просмотр тела и истории попыток. Неуспешное событие можно отправить повторно; данные обновляются автоматически.
 
 ## Запуск
 
-Нужны Go 1.24+ и Docker с Compose. Команды рассчитаны на PowerShell.
+Для запуска нужен Docker с Compose. Команды рассчитаны на PowerShell.
 
 ```powershell
 git clone https://github.com/Ivan00700/HookRelay.git
@@ -51,38 +51,27 @@ cd HookRelay
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-Задайте `POSTGRES_PASSWORD` в `.env`, затем запустите PostgreSQL:
+Задайте `POSTGRES_PASSWORD` в `.env`, затем соберите и запустите сервис:
 
 ```powershell
-docker compose up -d --wait db
+docker compose up -d --build --wait
 ```
 
-**Только для пустой базы** примените миграции одной транзакцией:
+Откройте **[localhost:8080](http://localhost:8080/)**. Compose запустит PostgreSQL, создаст таблицы в пустом томе и дождётся готовности приложения. Данные сохраняются в `postgres_data` при перезапуске. Внешние порты задаются через `HTTP_PORT` и `POSTGRES_PORT` в `.env`.
+
+Для пробной доставки добавьте получателя:
 
 ```powershell
-Get-Content -Raw migrations/001_init.sql,migrations/002_create_events.sql,migrations/003_create_delivery_attempts.sql,migrations/004_event_queue.sql,migrations/005_delivery_retries.sql | docker compose exec -T db psql -U hookrelay -d hookrelay -v ON_ERROR_STOP=1 --single-transaction -f -
+docker compose --profile demo up -d --build --wait
 ```
 
-Задайте подключение в том же терминале и запустите приложение:
+В панели создайте endpoint `http://receiver:9000/webhook` с секретом `dev-secret` (или своим `WEBHOOK_SECRET` из `.env`) и отправьте JSON-объект. Успешная доставка получает статус `delivered`. Генератор небольшой нагрузки:
 
 ```powershell
-$databasePassword = [uri]::EscapeDataString('пароль из POSTGRES_PASSWORD')
-$env:DATABASE_URL = "postgres://hookrelay:${databasePassword}@127.0.0.1:5433/hookrelay?sslmode=disable"
-go run ./cmd/hookrelay
+docker compose exec app /app/loadgen -endpoint-url http://receiver:9000/webhook -secret dev-secret -count 100 -concurrency 4
 ```
 
-Откройте **[localhost:8080](http://localhost:8080/)**. Зависимости Go загружаются автоматически; отдельная сборка frontend не нужна. `GET /health` проверяет работу HTTP, `GET /ready` — готовность БД.
-
-Compose читает `.env`, а Go — переменные окружения процесса. При другом `POSTGRES_PORT` измените порт в `DATABASE_URL`; HTTP-порт задаётся через `HTTP_PORT` (по умолчанию `8080`). Команда `go run ./cmd/dbcheck` проверяет соединение. Подключение DBeaver и обновление схемы описаны в [PostgreSQL](docs/postgres.md).
-
-Для пробной доставки запустите получателя в другом терминале:
-
-```powershell
-$env:WEBHOOK_SECRET = "dev-secret"
-go run ./examples/receiver
-```
-
-В панели создайте endpoint `http://127.0.0.1:9000/webhook` с секретом `dev-secret` и отправьте JSON-объект. Успешная доставка получает статус `delivered`.
+Он выводит JSON с числом принятых, отклонённых, доставленных и незавершённых событий. [Запуск, обновление и работа без контейнера приложения](docs/deployment.md), [сценарий демонстрации](docs/demo.md).
 
 Prometheus запускается отдельно:
 
@@ -90,12 +79,12 @@ Prometheus запускается отдельно:
 docker compose --profile monitoring up -d --wait prometheus
 ```
 
-Откройте [localhost:9090](http://localhost:9090/). Target по умолчанию — приложение на порту `8080`; настройка и PromQL приведены в [наблюдаемости](docs/observability.md).
+Откройте [localhost:9090](http://localhost:9090/). Prometheus обращается к `app:8080` внутри Compose; настройка и PromQL приведены в [наблюдаемости](docs/observability.md).
 
 ## Проверки
 
 ```powershell
-$env:TEST_DATABASE_URL = $env:DATABASE_URL
+# задайте TEST_DATABASE_URL согласно docs/testing.md
 ./scripts/check.ps1
 ```
 
@@ -112,6 +101,9 @@ $env:TEST_DATABASE_URL = $env:DATABASE_URL
 | [Веб-панель](docs/dashboard.md) | Работа с интерфейсом и скриншоты |
 | [Наблюдаемость](docs/observability.md) | Логи, request ID, probes, метрики и PromQL |
 | [Тестирование](docs/testing.md) | Покрытые требования, проверка отказов и полный прогон |
+| [Развёртывание](docs/deployment.md) | Docker, запуск из Go, обновление и сохранение данных |
+| [Решения](docs/decisions.md) | Схема компонентов, принятые решения и границы гарантий |
+| [Демонстрация](docs/demo.md) | Проверка доставки, генератор нагрузки и рассказ о проекте |
 
 ## Ограничения
 

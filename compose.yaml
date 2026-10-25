@@ -1,4 +1,23 @@
 services:
+  app:
+    image: hookrelay:local
+    build: .
+    environment:
+      DATABASE_URL: "host=db port=5432 user=hookrelay dbname=hookrelay sslmode=disable"
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      HTTP_PORT: "8080"
+    ports:
+      - "127.0.0.1:${HTTP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   db:
     image: postgres:17
     environment:
@@ -9,11 +28,22 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # файлы SQL выполняются только при первом запуске пустого тома
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hookrelay -d hookrelay"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "hookrelay", "-d", "hookrelay"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  receiver:
+    image: hookrelay:local
+    build: .
+    profiles: ["demo"]
+    entrypoint: ["/app/receiver"]
+    environment:
+      RECEIVER_ADDR: ":9000"
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-secret}
 
   prometheus:
     image: prom/prometheus:v3.5.1

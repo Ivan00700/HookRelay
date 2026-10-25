@@ -60,6 +60,9 @@ examples/receiver/
   handler.go                     проверка подписи и приём webhook
 migrations/                      пять SQL-файлов структуры БД
 deploy/prometheus.yaml           настройка сбора метрик
+cmd/loadgen/                     генератор событий и ожидание статусов
+Dockerfile                       сборка бинарников и образ с обычным пользователем
+compose.yaml                     приложение, PostgreSQL, профили monitoring и demo
 ```
 
 ## Запуск
